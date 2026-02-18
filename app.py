@@ -1,0 +1,619 @@
+# -*- coding: utf-8 -*-
+"""
+FinTech Benchmark Tool – Streamlit App
+Converted from Google Colab by Claude
+"""
+
+import streamlit as st
+import json
+import re
+import time
+import uuid
+import pandas as pd
+from io import BytesIO
+from copy import deepcopy
+
+# ─────────────────────────────────────────────
+# PAGE CONFIG
+# ─────────────────────────────────────────────
+st.set_page_config(
+    page_title="FinTech Benchmark Tool",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ─────────────────────────────────────────────
+# STYLING
+# ─────────────────────────────────────────────
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] { background: #0f1117; }
+    .step-header { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.2rem; }
+    .step-sub   { color: #888; font-size: 0.9rem; margin-bottom: 1.2rem; }
+    .criterion-card {
+        background: #1a1d27;
+        border: 1px solid #2e3347;
+        border-radius: 10px;
+        padding: 1.1rem 1.2rem;
+        margin-bottom: 0.8rem;
+    }
+    .tag {
+        display: inline-block;
+        background: #2e3347;
+        color: #aab;
+        border-radius: 4px;
+        padding: 1px 8px;
+        font-size: 0.75rem;
+        margin-right: 4px;
+    }
+    .score-pill {
+        display: inline-block;
+        background: #1d4ed8;
+        color: white;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# DEFAULT SEED DATA
+# ─────────────────────────────────────────────
+DEFAULT_COMPANIES = "\n".join([
+    "N26", "Klarna", "Revolut", "Trade Republic", "Monzo",
+    "nubank", "Sparkassen-Finanzgruppe", "Deutsche Bank",
+    "Commerzbank", "ING Deutschland",
+])
+
+DEFAULT_CRITERIA = [
+    {
+        "id": str(uuid.uuid4()),
+        "category": "Geschäftsmodell",
+        "name": "Wertschöpfungstiefe",
+        "description": "Bewerte, in welchem Umfang die Wertschöpfung intern erfolgt vs. über Drittpartner.",
+        "scale": 4,
+        "anchor_low":  "Plattform-Fokus (hohe Fremdfertigung) → >80 % der Wertschöpfung über Drittanbieter",
+        "anchor_high": "Eigenfertigungs-Fokus (volle Integration) → 0–10 % Fremdabwicklung, überwiegend eigene Bilanz/Infrastruktur",
+        "examples": [],
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "category": "Geschäftsmodell",
+        "name": "Erlösbasis",
+        "description": "Bewerte Struktur und Diversifikation der Ertragsquellen.",
+        "scale": 4,
+        "anchor_low":  "Klassisch → primär Zinsen, Provisionen, transaktionsbasierte Gebühren",
+        "anchor_high": "Alternativ/erweitert → signifikante Erlöse aus Services, Abonnements, Plattform- oder SaaS-Modellen",
+        "examples": [],
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "category": "Markt- und Kundenzugang",
+        "name": "Zielgruppen-Fokus",
+        "description": "Bewerte die strategische Breite des Angebots.",
+        "scale": 4,
+        "anchor_low":  "Starke Segment-Spezialisierung → klar definierte Zielgruppe oder Use Cases",
+        "anchor_high": "Vollumfängliches Finanzportfolio → breites Angebot für mehrere Zielgruppen/Lebenssituationen",
+        "examples": [],
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "category": "Markt- und Kundenzugang",
+        "name": "Beziehungs-Hoheit",
+        "description": "Bewerte die Rolle im direkten Kundenkontakt.",
+        "scale": 4,
+        "anchor_low":  "Abwicklung ohne Kundenschnittstelle → B2B-/White-Label-Rolle, kaum direkte Kundeninteraktion",
+        "anchor_high": "Zentrale und erste Schnittstelle für jeglichen Finanzbedarf → täglicher Touchpoint, hohe Nutzungstiefe",
+        "examples": [],
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "category": "Operating Model",
+        "name": "Innovations-Modus",
+        "description": "Bewerte Organisations- und Entwicklungslogik.",
+        "scale": 4,
+        "anchor_low":  "Starr & manuell → Silo-Strukturen, lange Entscheidungswege, hoher manueller Anteil",
+        "anchor_high": "Agil & produktgetrieben → cross-funktionale Teams, schnelle Iterationen, hohe Automatisierung",
+        "examples": [],
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "category": "Operating Model",
+        "name": "Daten- & Technologie-Fundament",
+        "description": "Bewerte den Reifegrad von Technologie, Daten & Analytics.",
+        "scale": 4,
+        "anchor_low":  "Wenig weit entwickelt → geringe Datenintegration, limitierte Analytics/AI-Nutzung",
+        "anchor_high": "Hoch entwickelt → moderne API-Architektur, starke Analytics, systematischer AI-Einsatz",
+        "examples": [],
+    },
+]
+
+# ─────────────────────────────────────────────
+# SESSION STATE INIT
+# ─────────────────────────────────────────────
+if "criteria" not in st.session_state:
+    st.session_state.criteria = deepcopy(DEFAULT_CRITERIA)
+if "companies_text" not in st.session_state:
+    st.session_state.companies_text = DEFAULT_COMPANIES
+if "results" not in st.session_state:
+    st.session_state.results = []
+if "adding_criterion" not in st.session_state:
+    st.session_state.adding_criterion = False
+if "editing_id" not in st.session_state:
+    st.session_state.editing_id = None
+
+# ─────────────────────────────────────────────
+# SIDEBAR – API KEY & NAV
+# ─────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("## 📊 FinTech Benchmark")
+    st.markdown("---")
+    api_key = st.text_input(
+        "Gemini API Key",
+        type="password",
+        placeholder="AIza...",
+        help="Get your key at https://aistudio.google.com/app/apikey",
+    )
+    st.markdown("---")
+    st.markdown("**Navigation**")
+    page = st.radio(
+        "Go to",
+        ["① Companies", "② Criteria", "③ Few-shot Examples", "④ Run Analysis"],
+        label_visibility="collapsed",
+    )
+    st.markdown("---")
+    n_companies = len([c for c in st.session_state.companies_text.splitlines() if c.strip()])
+    n_criteria  = len(st.session_state.criteria)
+    n_results   = len(st.session_state.results)
+    st.markdown(f"🏢 **{n_companies}** companies")
+    st.markdown(f"📋 **{n_criteria}** criteria")
+    st.markdown(f"✅ **{n_results}** results ready")
+
+# ═══════════════════════════════════════════════════════
+# PAGE 1 – COMPANIES
+# ═══════════════════════════════════════════════════════
+if page == "① Companies":
+    st.markdown('<div class="step-header">① Company List</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">One company name per line. The tool will research each one in order.</div>', unsafe_allow_html=True)
+
+    col_left, col_right = st.columns([2, 1])
+    with col_left:
+        raw = st.text_area(
+            "Companies",
+            value=st.session_state.companies_text,
+            height=420,
+            label_visibility="collapsed",
+            placeholder="N26\nKlarna\nRevolut\n...",
+        )
+        st.session_state.companies_text = raw
+
+    with col_right:
+        companies = [c.strip() for c in raw.splitlines() if c.strip()]
+        st.markdown(f"**{len(companies)} companies loaded**")
+        st.markdown("---")
+        for c in companies[:20]:
+            st.markdown(f"• {c}")
+        if len(companies) > 20:
+            st.markdown(f"*…and {len(companies)-20} more*")
+        st.markdown("---")
+        if st.button("🔄 Reset to defaults"):
+            st.session_state.companies_text = DEFAULT_COMPANIES
+            st.rerun()
+
+# ═══════════════════════════════════════════════════════
+# PAGE 2 – CRITERIA
+# ═══════════════════════════════════════════════════════
+elif page == "② Criteria":
+    st.markdown('<div class="step-header">② Scoring Criteria</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">Define what gets scored and how. Each criterion uses a Likert scale anchored at 1 (low) and N (high).</div>', unsafe_allow_html=True)
+
+    # ── Existing criteria ──
+    to_delete = None
+    to_edit   = None
+
+    for idx, crit in enumerate(st.session_state.criteria):
+        with st.container():
+            st.markdown(f"""
+            <div class="criterion-card">
+                <span class="tag">{crit['category']}</span>
+                <span class="tag">{crit['scale']}-point</span>
+                <strong style="font-size:1.05rem">&nbsp;{crit['name']}</strong>
+                <p style="color:#aab;font-size:0.88rem;margin:0.4rem 0 0.2rem">{crit['description']}</p>
+                <p style="color:#66f;font-size:0.82rem;margin:0">1 = {crit['anchor_low'][:80]}…</p>
+                <p style="color:#6f6;font-size:0.82rem;margin:0">{crit['scale']} = {crit['anchor_high'][:80]}…</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            btn_col1, btn_col2, btn_col3, _ = st.columns([1, 1, 1, 5])
+            with btn_col1:
+                if st.button("✏️ Edit", key=f"edit_{crit['id']}"):
+                    st.session_state.editing_id = crit["id"]
+                    st.rerun()
+            with btn_col2:
+                if st.button("🗑️ Delete", key=f"del_{crit['id']}"):
+                    to_delete = crit["id"]
+            with btn_col3:
+                n_ex = len(crit.get("examples", []))
+                st.markdown(f"<span style='font-size:0.8rem;color:#888'>{n_ex} example(s)</span>", unsafe_allow_html=True)
+
+    if to_delete:
+        st.session_state.criteria = [c for c in st.session_state.criteria if c["id"] != to_delete]
+        st.rerun()
+
+    st.markdown("---")
+
+    # ── Edit or Add Form ──
+    editing = st.session_state.editing_id is not None
+    adding  = st.session_state.adding_criterion
+
+    if not editing and not adding:
+        col1, col2 = st.columns([1, 5])
+        with col1:
+            if st.button("➕ Add criterion"):
+                st.session_state.adding_criterion = True
+                st.rerun()
+        with col2:
+            if st.button("🔄 Reset all to defaults"):
+                st.session_state.criteria = deepcopy(DEFAULT_CRITERIA)
+                st.rerun()
+
+    else:
+        # Populate existing values if editing
+        existing = {}
+        if editing:
+            for c in st.session_state.criteria:
+                if c["id"] == st.session_state.editing_id:
+                    existing = c
+                    break
+            st.subheader("✏️ Edit Criterion")
+        else:
+            st.subheader("➕ New Criterion")
+
+        with st.form("criterion_form"):
+            f_category = st.text_input("Category",       value=existing.get("category", ""))
+            f_name     = st.text_input("Criterion name", value=existing.get("name", ""))
+            f_desc     = st.text_area("Description (shown to the model)",
+                                      value=existing.get("description", ""), height=90)
+            f_scale    = st.selectbox("Scale",  [3, 4, 5],
+                                      index=[3,4,5].index(existing.get("scale", 4)))
+            f_low      = st.text_area(f"Anchor for 1 (lowest)",
+                                      value=existing.get("anchor_low",  ""), height=70)
+            f_high     = st.text_area(f"Anchor for {f_scale} (highest)",
+                                      value=existing.get("anchor_high", ""), height=70)
+
+            save_col, cancel_col = st.columns([1, 1])
+            with save_col:
+                submitted = st.form_submit_button("💾 Save")
+            with cancel_col:
+                cancelled = st.form_submit_button("✖ Cancel")
+
+        if submitted:
+            new_crit = {
+                "id": existing.get("id") or str(uuid.uuid4()),
+                "category":    f_category,
+                "name":        f_name,
+                "description": f_desc,
+                "scale":       f_scale,
+                "anchor_low":  f_low,
+                "anchor_high": f_high,
+                "examples":    existing.get("examples", []),
+            }
+            if editing:
+                st.session_state.criteria = [
+                    new_crit if c["id"] == existing["id"] else c
+                    for c in st.session_state.criteria
+                ]
+            else:
+                st.session_state.criteria.append(new_crit)
+            st.session_state.editing_id      = None
+            st.session_state.adding_criterion = False
+            st.rerun()
+
+        if cancelled:
+            st.session_state.editing_id      = None
+            st.session_state.adding_criterion = False
+            st.rerun()
+
+# ═══════════════════════════════════════════════════════
+# PAGE 3 – FEW-SHOT EXAMPLES
+# ═══════════════════════════════════════════════════════
+elif page == "③ Few-shot Examples":
+    st.markdown('<div class="step-header">③ Few-shot Examples</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">For each criterion, you can provide scored reference companies. The model will use these as calibration anchors.</div>', unsafe_allow_html=True)
+
+    for crit_idx, crit in enumerate(st.session_state.criteria):
+        with st.expander(f"**{crit['category']} › {crit['name']}** ({crit['scale']}-point scale)  —  {len(crit['examples'])} example(s)"):
+            examples = crit["examples"]
+
+            # Display + delete existing examples
+            to_remove = None
+            for ex_idx, ex in enumerate(examples):
+                col_score, col_company, col_reason, col_del = st.columns([1, 2, 5, 1])
+                with col_score:
+                    st.markdown(f"<span class='score-pill'>{ex['score']}</span>", unsafe_allow_html=True)
+                with col_company:
+                    st.markdown(f"**{ex['company']}**")
+                with col_reason:
+                    st.markdown(f"<span style='color:#aab;font-size:0.88rem'>{ex['reason']}</span>", unsafe_allow_html=True)
+                with col_del:
+                    if st.button("✖", key=f"rm_ex_{crit['id']}_{ex_idx}"):
+                        to_remove = ex_idx
+
+            if to_remove is not None:
+                st.session_state.criteria[crit_idx]["examples"].pop(to_remove)
+                st.rerun()
+
+            # Add new example
+            st.markdown("**Add example**")
+            with st.form(f"ex_form_{crit['id']}"):
+                ex_col1, ex_col2, ex_col3 = st.columns([2, 1, 4])
+                with ex_col1:
+                    ex_company = st.text_input("Company", key=f"exc_{crit['id']}")
+                with ex_col2:
+                    ex_score   = st.selectbox("Score", list(range(1, crit["scale"] + 1)), key=f"exs_{crit['id']}")
+                with ex_col3:
+                    ex_reason  = st.text_input("Reasoning", key=f"exr_{crit['id']}")
+                if st.form_submit_button("➕ Add"):
+                    if ex_company.strip():
+                        st.session_state.criteria[crit_idx]["examples"].append({
+                            "company": ex_company.strip(),
+                            "score":   ex_score,
+                            "reason":  ex_reason.strip(),
+                        })
+                        st.rerun()
+
+# ═══════════════════════════════════════════════════════
+# PAGE 4 – RUN ANALYSIS
+# ═══════════════════════════════════════════════════════
+elif page == "④ Run Analysis":
+    st.markdown('<div class="step-header">④ Run Analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">Review your configuration, then launch the benchmark run.</div>', unsafe_allow_html=True)
+
+    companies = [c.strip() for c in st.session_state.companies_text.splitlines() if c.strip()]
+    criteria  = st.session_state.criteria
+
+    # ── Config summary ──
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("Companies", len(companies))
+    col_b.metric("Criteria",  len(criteria))
+    est_mins = max(1, round(len(companies) * 8 / 60))
+    col_c.metric("Est. runtime", f"~{est_mins} min")
+
+    if not api_key:
+        st.warning("⚠️  Please enter your Gemini API key in the sidebar.")
+        st.stop()
+    if not companies:
+        st.warning("⚠️  No companies defined. Go to ① Companies.")
+        st.stop()
+    if not criteria:
+        st.warning("⚠️  No criteria defined. Go to ② Criteria.")
+        st.stop()
+
+    # ── Prompt preview ──
+    with st.expander("👁 Preview prompt (first company)"):
+        st.code(build_prompt(companies[0], criteria), language="markdown")
+
+    st.markdown("---")
+
+    # ── Run button ──
+    if st.button("🚀 Start Benchmark Run", type="primary", use_container_width=True):
+        run_analysis(api_key, companies, criteria)
+
+    # ── Results ──
+    if st.session_state.results:
+        st.markdown("---")
+        st.markdown("### Results")
+        df = results_to_df(st.session_state.results, criteria)
+        st.dataframe(df, use_container_width=True, height=400)
+
+        # Download buttons
+        dl_col1, dl_col2 = st.columns(2)
+        with dl_col1:
+            csv_bytes = df.to_csv(index=False).encode("utf-8")
+            st.download_button("⬇️ Download CSV", csv_bytes, "benchmark_results.csv", "text/csv")
+        with dl_col2:
+            excel_bytes = to_excel(df)
+            st.download_button("⬇️ Download Excel", excel_bytes, "benchmark_results.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+# ═══════════════════════════════════════════════════════
+# HELPER FUNCTIONS  (defined after pages so Streamlit doesn't complain)
+# ═══════════════════════════════════════════════════════
+
+def build_prompt(company_name: str, criteria: list) -> str:
+    """Dynamically build the analysis prompt from criteria config."""
+
+    # Build criteria block
+    criteria_block = ""
+    for i, c in enumerate(criteria, 1):
+        criteria_block += f"""
+{i}. {c['category'].upper()} – {c['name']}
+
+{c['description']}
+
+Skalenanker:
+1 = {c['anchor_low']}
+{c['scale']} = {c['anchor_high']}
+"""
+        if c.get("examples"):
+            criteria_block += "\nKalibrierungsbeispiele:\n"
+            for ex in c["examples"]:
+                criteria_block += f"  • {ex['company']}: Score {ex['score']} — {ex['reason']}\n"
+        criteria_block += "\n---\n"
+
+    # Build JSON schema example
+    json_example_items = ""
+    for c in criteria:
+        json_example_items += f"""    {{
+      "kategorie": "{c['category']}",
+      "kriterium": "{c['name']}",
+      "score": "1-{c['scale']}",
+      "begruendung": "...",
+      "quellen": ["URL1", "URL2"]
+    }},
+"""
+
+    prompt = f"""<rolle>
+Du bist ein unabhängiger, erfahrener Finanz- und Strategieberater.
+Du arbeitest faktenbasiert, kritisch, vergleichend und nachvollziehbar.
+</rolle>
+
+<kontext>
+Du bewertest Finanz- und FinTech-Unternehmen anhand öffentlich zugänglicher Informationen
+(z. B. Unternehmenswebsites, Geschäftsberichte, Pressemitteilungen, regulatorische Veröffentlichungen).
+Das aktuelle Jahr ist 2025.
+</kontext>
+
+<aufgabe>
+Analysiere und bewerte das folgende Unternehmen anhand der definierten Kriterien.
+
+Unternehmen: {company_name}
+
+Führe dafür eine gezielte Web-Recherche durch.
+Nutze ausschließlich öffentlich zugängliche, überprüfbare Quellen.
+Wenn Informationen fehlen, veraltet oder nicht eindeutig belegbar sind, weise explizit darauf hin. Keine Spekulation.
+</aufgabe>
+
+<bewertungssystem>
+Verwende für JEDE Teilkategorie die angegebene Likert-Skala (je Kriterium 3, 4 oder 5 Punkte).
+Bewerte stets relativ zu anderen Finanz- und FinTech-Unternehmen, nicht absolut oder idealtypisch.
+Alle Bewertungen müssen logisch aus den gefundenen Fakten ableitbar sein.
+</bewertungssystem>
+
+<kriterien>
+{criteria_block}
+</kriterien>
+
+<ausgabeformat>
+Gib die Antwort AUSSCHLIESSLICH als valides JSON zurück – kein Text außerhalb des JSON.
+
+{{
+  "unternehmen": "{company_name}",
+  "bewertungen": [
+{json_example_items.rstrip(',\n')}
+  ],
+  "hinweise_zur_datenlage": "Optionale Hinweise zu Datenlücken oder eingeschränkter Vergleichbarkeit."
+}}
+</ausgabeformat>
+
+<finale_anweisung>
+Arbeite strukturiert, konsistent und faktenbasiert.
+Priorisiere Nachvollziehbarkeit, Vergleichbarkeit und Transparenz.
+Keine Inhalte außerhalb des JSON ausgeben.
+</finale_anweisung>
+"""
+    return prompt
+
+
+def extract_json(text: str):
+    try:
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+    except Exception:
+        pass
+    return None
+
+
+def parse_response(data: dict, company: str, criteria: list) -> dict:
+    """Flatten the JSON response into a row dict."""
+    row = {"Unternehmen": company, "Status": "OK"}
+    bewertungen = data.get("bewertungen", [])
+
+    # Map by (category, name) for robust lookup
+    lookup = {}
+    for b in bewertungen:
+        key = (b.get("kategorie", "").strip(), b.get("kriterium", "").strip())
+        lookup[key] = b
+
+    for c in criteria:
+        col_base = f"{c['category']} › {c['name']}"
+        b = lookup.get((c["category"], c["name"]), {})
+        row[f"{col_base} | Score"]       = b.get("score", "")
+        row[f"{col_base} | Begründung"]  = b.get("begruendung", "")
+        row[f"{col_base} | Quellen"]     = "; ".join(b.get("quellen", []))
+
+    row["Hinweise Datenlage"] = data.get("hinweise_zur_datenlage", "")
+    return row
+
+
+def results_to_df(results: list, criteria: list) -> pd.DataFrame:
+    return pd.DataFrame(results)
+
+
+def to_excel(df: pd.DataFrame) -> bytes:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Benchmark")
+    return buf.getvalue()
+
+
+def run_analysis(api_key: str, companies: list, criteria: list):
+    """Run the full benchmark analysis with progress tracking."""
+    try:
+        from google import genai as genai_client
+        from google.genai import types
+    except ImportError:
+        st.error("google-genai package not installed. Run: pip install google-genai")
+        return
+
+    client = genai_client.Client(api_key=api_key)
+    grounding_tool = types.Tool(google_search=types.GoogleSearch())
+    config = types.GenerateContentConfig(tools=[grounding_tool])
+
+    results = []
+    progress_bar = st.progress(0)
+    status_text  = st.empty()
+    log_area     = st.empty()
+    log_lines    = []
+
+    for idx, company in enumerate(companies):
+        pct = idx / len(companies)
+        progress_bar.progress(pct)
+        status_text.markdown(f"**Processing {idx+1}/{len(companies)}: {company}**")
+
+        try:
+            prompt   = build_prompt(company, criteria)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+                config=config,
+            )
+
+            # Collect grounding sources
+            sources = []
+            try:
+                metadata = response.candidates[0].grounding_metadata
+                if metadata and metadata.grounding_chunks:
+                    for chunk in metadata.grounding_chunks:
+                        if chunk.web:
+                            sources.append(f"{chunk.web.title}: {chunk.web.uri}")
+            except Exception:
+                pass
+
+            data = extract_json(response.text)
+            if data and "bewertungen" in data:
+                row = parse_response(data, company, criteria)
+                row["_raw_json"]    = response.text[:2000]
+                row["_all_sources"] = "\n".join(set(sources))
+                results.append(row)
+                log_lines.append(f"✅ {company}")
+            else:
+                results.append({"Unternehmen": company, "Status": "Parse error – no JSON found"})
+                log_lines.append(f"⚠️  {company} — JSON parse failed")
+
+        except Exception as e:
+            results.append({"Unternehmen": company, "Status": f"Error: {str(e)}"})
+            log_lines.append(f"❌ {company} — {str(e)}")
+
+        log_area.code("\n".join(log_lines[-15:]))
+        time.sleep(3)  # rate limiting
+
+    progress_bar.progress(1.0)
+    status_text.markdown("**✅ Run complete!**")
+    st.session_state.results = results
+    st.rerun()
