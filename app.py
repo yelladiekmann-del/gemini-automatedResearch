@@ -173,33 +173,63 @@ if "adding_criterion" not in st.session_state:
 if "editing_id" not in st.session_state:
     st.session_state.editing_id = None
 
+# Navigation State
+if "page_index" not in st.session_state:
+    st.session_state.page_index = 0
+
+PAGES = [
+    "Überblick",
+    "Unternehmen",
+    "Kriterien",
+    "Kalibrierungsbeispiele",
+    "Analyse durchführen",
+]
+
 # ─────────────────────────────────────────────
 # SIDEBAR – API KEY & NAV
 # ─────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("##Automatisiertes Gemini Research Tool")
+    st.markdown("## Automatisiertes Gemini Research Tool")
     st.markdown("---")
+
     api_key = st.text_input(
         "Gemini API Key",
         type="password",
         placeholder="Hier den Key eingeben",
         help="Frag Yella",
     )
+
     st.markdown("---")
     st.markdown("**Navigation**")
-    page = st.radio(
-        "Seite auswählen",
-        ["① Unternehmen", "② Kriterien", "③ Kalibrierungsbeispiele", "④ Analyse durchführen"],
-        label_visibility="collapsed",
-    )
+
+    current_page = PAGES[st.session_state.page_index]
+    st.markdown(f"Aktuelle Seite: {current_page}")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.session_state.page_index > 0:
+            if st.button("Zurück"):
+                st.session_state.page_index -= 1
+                st.rerun()
+
+    with col2:
+        if st.session_state.page_index < len(PAGES) - 1:
+            if st.button("Weiter"):
+                st.session_state.page_index += 1
+                st.rerun()
+
+    page = current_page
+
     st.markdown("---")
+
     n_Unternehmen = len([c for c in st.session_state.Unternehmen_text.splitlines() if c.strip()])
     n_Kriterien  = len(st.session_state.Kriterien)
     n_results   = len(st.session_state.results)
+
     st.markdown(f"**{n_Unternehmen}** Unternehmen")
     st.markdown(f"**{n_Kriterien}** Kriterien")
-    st.markdown(f"**{n_results}** Ergebnisse sind ready:)")
-
+    st.markdown(f"**{n_results}** Ergebnisse verfügbar")
 
 # ═══════════════════════════════════════════════════════
 # HELPER FUNCTIONS  (defined after pages so Streamlit doesn't complain)
@@ -400,9 +430,36 @@ def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
     st.rerun()
     
 # ═══════════════════════════════════════════════════════
+# PAGE 0 – ÜBERBLICK
+# ═══════════════════════════════════════════════════════
+if page == "Überblick":
+    st.markdown("## Willkommen zum automatisierten Gemini Research Tool")
+
+    st.markdown("""
+    Diese Anwendung ermöglicht:
+
+    1. Definition von Unternehmen
+    2. Konfiguration individueller Bewertungskriterien
+    3. Kalibrierung mittels Referenzbeispielen
+    4. KI-gestützte Analyse mit Web-Recherche
+    5. Export der Ergebnisse als CSV oder Excel
+
+    Vorgehen:
+
+    - Schritt 1: Unternehmen definieren
+    - Schritt 2: Kriterien prüfen oder anpassen
+    - Schritt 3: Optional Kalibrierungsbeispiele hinzufügen
+    - Schritt 4: Analyse starten
+    """)
+
+    if st.button("Analyse starten"):
+        st.session_state.page_index = 1
+        st.rerun()
+
+# ═══════════════════════════════════════════════════════
 # PAGE 1 – Unternehmen
 # ═══════════════════════════════════════════════════════
-if page == "① Unternehmen":
+if page == "Unternehmen":
     st.markdown('<div class="step-header">① Company List</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">One company name per line. The tool will research each one in order.</div>', unsafe_allow_html=True)
 
@@ -433,7 +490,7 @@ if page == "① Unternehmen":
 # ═══════════════════════════════════════════════════════
 # PAGE 2 – Kriterien
 # ═══════════════════════════════════════════════════════
-elif page == "② Kriterien":
+elif page == "Kriterien":
     st.markdown('<div class="step-header">② Scoring Kriterien</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">Define what gets scored and how. Each criterion uses a Likert scale anchored at 1 (low) and N (high).</div>', unsafe_allow_html=True)
 
@@ -547,7 +604,7 @@ elif page == "② Kriterien":
 # ═══════════════════════════════════════════════════════
 # PAGE 3 – Kalibrierungsbeispiele
 # ═══════════════════════════════════════════════════════
-elif page == "③ Kalibrierungsbeispiele":
+elif page == "Kalibrierungsbeispiele":
     st.markdown('<div class="step-header">③ Kalibrierungsbeispiele</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">For each criterion, you can provide scored reference Unternehmen. The model will use these as calibration anchors.</div>', unsafe_allow_html=True)
 
@@ -595,7 +652,7 @@ elif page == "③ Kalibrierungsbeispiele":
 # ═══════════════════════════════════════════════════════
 # PAGE 4 – Analyse durchführen
 # ═══════════════════════════════════════════════════════
-elif page == "④ Analyse durchführen":
+elif page == "Analyse durchführen":
     st.markdown('<div class="step-header">④ Analyse durchführen</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">Review your configuration, then launch the benchmark run.</div>', unsafe_allow_html=True)
 
