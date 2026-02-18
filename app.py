@@ -17,8 +17,7 @@ from copy import deepcopy
 # PAGE CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="FinTech Benchmark Tool",
-    page_icon="📊",
+    page_title="Automatisiertes Gemini Research Tool",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -62,13 +61,13 @@ st.markdown("""
 # ─────────────────────────────────────────────
 # DEFAULT SEED DATA
 # ─────────────────────────────────────────────
-DEFAULT_COMPANIES = "\n".join([
+DEFAULT_Unternehmen = "\n".join([
     "N26", "Klarna", "Revolut", "Trade Republic", "Monzo",
     "nubank", "Sparkassen-Finanzgruppe", "Deutsche Bank",
     "Commerzbank", "ING Deutschland",
 ])
 
-DEFAULT_CRITERIA = [
+DEFAULT_Kriterien = [
     {
         "id": str(uuid.uuid4()),
         "category": "Geschäftsmodell",
@@ -134,10 +133,10 @@ DEFAULT_CRITERIA = [
 # ─────────────────────────────────────────────
 # SESSION STATE INIT
 # ─────────────────────────────────────────────
-if "criteria" not in st.session_state:
-    st.session_state.criteria = deepcopy(DEFAULT_CRITERIA)
-if "companies_text" not in st.session_state:
-    st.session_state.companies_text = DEFAULT_COMPANIES
+if "Kriterien" not in st.session_state:
+    st.session_state.Kriterien = deepcopy(DEFAULT_Kriterien)
+if "Unternehmen_text" not in st.session_state:
+    st.session_state.Unternehmen_text = DEFAULT_Unternehmen
 if "results" not in st.session_state:
     st.session_state.results = []
 if "adding_criterion" not in st.session_state:
@@ -160,30 +159,30 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**Navigation**")
     page = st.radio(
-        "Go to",
-        ["① Companies", "② Criteria", "③ Few-shot Examples", "④ Run Analysis"],
+        "Seite auswählen",
+        ["① Unternehmen", "② Kriterien", "③ Kalibrierungsbeispiele", "④ Analyse durchführen"],
         label_visibility="collapsed",
     )
     st.markdown("---")
-    n_companies = len([c for c in st.session_state.companies_text.splitlines() if c.strip()])
-    n_criteria  = len(st.session_state.criteria)
+    n_Unternehmen = len([c for c in st.session_state.Unternehmen_text.splitlines() if c.strip()])
+    n_Kriterien  = len(st.session_state.Kriterien)
     n_results   = len(st.session_state.results)
-    st.markdown(f"🏢 **{n_companies}** companies")
-    st.markdown(f"📋 **{n_criteria}** criteria")
-    st.markdown(f"✅ **{n_results}** results ready")
+    st.markdown(f"**{n_Unternehmen}** Unternehmen")
+    st.markdown(f"**{n_Kriterien}** Kriterien")
+    st.markdown(f"**{n_results}** results ready")
 
 
 # ═══════════════════════════════════════════════════════
 # HELPER FUNCTIONS  (defined after pages so Streamlit doesn't complain)
 # ═══════════════════════════════════════════════════════
 
-def build_prompt(company_name: str, criteria: list) -> str:
-    """Dynamically build the analysis prompt from criteria config."""
+def build_prompt(company_name: str, Kriterien: list) -> str:
+    """Dynamically build the analysis prompt from Kriterien config."""
 
-    # Build criteria block
-    criteria_block = ""
-    for i, c in enumerate(criteria, 1):
-        criteria_block += f"""
+    # Build Kriterien block
+    Kriterien_block = ""
+    for i, c in enumerate(Kriterien, 1):
+        Kriterien_block += f"""
 {i}. {c['category'].upper()} – {c['name']}
 
 {c['description']}
@@ -193,14 +192,14 @@ Skalenanker:
 {c['scale']} = {c['anchor_high']}
 """
         if c.get("examples"):
-            criteria_block += "\nKalibrierungsbeispiele:\n"
+            Kriterien_block += "\nKalibrierungsbeispiele:\n"
             for ex in c["examples"]:
-                criteria_block += f"  • {ex['company']}: Score {ex['score']} — {ex['reason']}\n"
-        criteria_block += "\n---\n"
+                Kriterien_block += f"  • {ex['company']}: Score {ex['score']} — {ex['reason']}\n"
+        Kriterien_block += "\n---\n"
 
     # Build JSON schema example
     json_example_items = ""
-    for c in criteria:
+    for c in Kriterien:
         json_example_items += f"""    {{
       "kategorie": "{c['category']}",
       "kriterium": "{c['name']}",
@@ -238,7 +237,7 @@ Alle Bewertungen müssen logisch aus den gefundenen Fakten ableitbar sein.
 </bewertungssystem>
 
 <kriterien>
-{criteria_block}
+{Kriterien_block}
 </kriterien>
 
 <ausgabeformat>
@@ -272,7 +271,7 @@ def extract_json(text: str):
     return None
 
 
-def parse_response(data: dict, company: str, criteria: list) -> dict:
+def parse_response(data: dict, company: str, Kriterien: list) -> dict:
     """Flatten the JSON response into a row dict."""
     row = {"Unternehmen": company, "Status": "OK"}
     bewertungen = data.get("bewertungen", [])
@@ -283,7 +282,7 @@ def parse_response(data: dict, company: str, criteria: list) -> dict:
         key = (b.get("kategorie", "").strip(), b.get("kriterium", "").strip())
         lookup[key] = b
 
-    for c in criteria:
+    for c in Kriterien:
         col_base = f"{c['category']} › {c['name']}"
         b = lookup.get((c["category"], c["name"]), {})
         row[f"{col_base} | Score"]       = b.get("score", "")
@@ -294,7 +293,7 @@ def parse_response(data: dict, company: str, criteria: list) -> dict:
     return row
 
 
-def results_to_df(results: list, criteria: list) -> pd.DataFrame:
+def results_to_df(results: list, Kriterien: list) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
@@ -305,7 +304,7 @@ def to_excel(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-def run_analysis(api_key: str, companies: list, criteria: list):
+def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
     """Run the full benchmark analysis with progress tracking."""
     try:
         from google import genai as genai_client
@@ -324,13 +323,13 @@ def run_analysis(api_key: str, companies: list, criteria: list):
     log_area     = st.empty()
     log_lines    = []
 
-    for idx, company in enumerate(companies):
-        pct = idx / len(companies)
+    for idx, company in enumerate(Unternehmen):
+        pct = idx / len(Unternehmen)
         progress_bar.progress(pct)
-        status_text.markdown(f"**Processing {idx+1}/{len(companies)}: {company}**")
+        status_text.markdown(f"**Processing {idx+1}/{len(Unternehmen)}: {company}**")
 
         try:
-            prompt   = build_prompt(company, criteria)
+            prompt   = build_prompt(company, Kriterien)
             response = client.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=prompt,
@@ -350,70 +349,70 @@ def run_analysis(api_key: str, companies: list, criteria: list):
 
             data = extract_json(response.text)
             if data and "bewertungen" in data:
-                row = parse_response(data, company, criteria)
+                row = parse_response(data, company, Kriterien)
                 row["_raw_json"]    = response.text[:2000]
                 row["_all_sources"] = "\n".join(set(sources))
                 results.append(row)
-                log_lines.append(f"✅ {company}")
+                log_lines.append(f"{company}")
             else:
                 results.append({"Unternehmen": company, "Status": "Parse error – no JSON found"})
-                log_lines.append(f"⚠️  {company} — JSON parse failed")
+                log_lines.append(f"{company} — JSON parse failed")
 
         except Exception as e:
             results.append({"Unternehmen": company, "Status": f"Error: {str(e)}"})
-            log_lines.append(f"❌ {company} — {str(e)}")
+            log_lines.append(f"{company} — {str(e)}")
 
         log_area.code("\n".join(log_lines[-15:]))
         time.sleep(3)  # rate limiting
 
     progress_bar.progress(1.0)
-    status_text.markdown("**✅ Run complete!**")
+    status_text.markdown("**Run complete!**")
     st.session_state.results = results
     st.rerun()
     
 # ═══════════════════════════════════════════════════════
-# PAGE 1 – COMPANIES
+# PAGE 1 – Unternehmen
 # ═══════════════════════════════════════════════════════
-if page == "① Companies":
+if page == "① Unternehmen":
     st.markdown('<div class="step-header">① Company List</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">One company name per line. The tool will research each one in order.</div>', unsafe_allow_html=True)
 
     col_left, col_right = st.columns([2, 1])
     with col_left:
         raw = st.text_area(
-            "Companies",
-            value=st.session_state.companies_text,
+            "Unternehmen",
+            value=st.session_state.Unternehmen_text,
             height=420,
             label_visibility="collapsed",
             placeholder="N26\nKlarna\nRevolut\n...",
         )
-        st.session_state.companies_text = raw
+        st.session_state.Unternehmen_text = raw
 
     with col_right:
-        companies = [c.strip() for c in raw.splitlines() if c.strip()]
-        st.markdown(f"**{len(companies)} companies loaded**")
+        Unternehmen = [c.strip() for c in raw.splitlines() if c.strip()]
+        st.markdown(f"**{len(Unternehmen)} Unternehmen loaded**")
         st.markdown("---")
-        for c in companies[:20]:
+        for c in Unternehmen[:20]:
             st.markdown(f"• {c}")
-        if len(companies) > 20:
-            st.markdown(f"*…and {len(companies)-20} more*")
+        if len(Unternehmen) > 20:
+            st.markdown(f"*…and {len(Unternehmen)-20} more*")
         st.markdown("---")
         if st.button("🔄 Reset to defaults"):
-            st.session_state.companies_text = DEFAULT_COMPANIES
+            st.session_state.Unternehmen_text = DEFAULT_Unternehmen
             st.rerun()
 
 # ═══════════════════════════════════════════════════════
-# PAGE 2 – CRITERIA
+# PAGE 2 – Kriterien
 # ═══════════════════════════════════════════════════════
-elif page == "② Criteria":
-    st.markdown('<div class="step-header">② Scoring Criteria</div>', unsafe_allow_html=True)
+elif page == "② Kriterien":
+    st.markdown('<div class="step-header">② Scoring Kriterien</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">Define what gets scored and how. Each criterion uses a Likert scale anchored at 1 (low) and N (high).</div>', unsafe_allow_html=True)
 
-    # ── Existing criteria ──
+    # ── Existing Kriterien ──
     to_delete = None
     to_edit   = None
 
-    for idx, crit in enumerate(st.session_state.criteria):
+    for idx, crit in enumerate(st.session_state.Kriterien):
         with st.container():
             st.markdown(f"""
             <div class="criterion-card">
@@ -428,18 +427,18 @@ elif page == "② Criteria":
 
             btn_col1, btn_col2, btn_col3, _ = st.columns([1, 1, 1, 5])
             with btn_col1:
-                if st.button("✏️ Edit", key=f"edit_{crit['id']}"):
+                if st.button("Edit", key=f"edit_{crit['id']}"):
                     st.session_state.editing_id = crit["id"]
                     st.rerun()
             with btn_col2:
-                if st.button("🗑️ Delete", key=f"del_{crit['id']}"):
+                if st.button("Delete", key=f"del_{crit['id']}"):
                     to_delete = crit["id"]
             with btn_col3:
                 n_ex = len(crit.get("examples", []))
                 st.markdown(f"<span style='font-size:0.8rem;color:#888'>{n_ex} example(s)</span>", unsafe_allow_html=True)
 
     if to_delete:
-        st.session_state.criteria = [c for c in st.session_state.criteria if c["id"] != to_delete]
+        st.session_state.Kriterien = [c for c in st.session_state.Kriterien if c["id"] != to_delete]
         st.rerun()
 
     st.markdown("---")
@@ -455,15 +454,15 @@ elif page == "② Criteria":
                 st.session_state.adding_criterion = True
                 st.rerun()
         with col2:
-            if st.button("🔄 Reset all to defaults"):
-                st.session_state.criteria = deepcopy(DEFAULT_CRITERIA)
+            if st.button("Reset all to defaults"):
+                st.session_state.Kriterien = deepcopy(DEFAULT_Kriterien)
                 st.rerun()
 
     else:
         # Populate existing values if editing
         existing = {}
         if editing:
-            for c in st.session_state.criteria:
+            for c in st.session_state.Kriterien:
                 if c["id"] == st.session_state.editing_id:
                     existing = c
                     break
@@ -485,7 +484,7 @@ elif page == "② Criteria":
 
             save_col, cancel_col = st.columns([1, 1])
             with save_col:
-                submitted = st.form_submit_button("💾 Save")
+                submitted = st.form_submit_button("Save")
             with cancel_col:
                 cancelled = st.form_submit_button("✖ Cancel")
 
@@ -501,12 +500,12 @@ elif page == "② Criteria":
                 "examples":    existing.get("examples", []),
             }
             if editing:
-                st.session_state.criteria = [
+                st.session_state.Kriterien = [
                     new_crit if c["id"] == existing["id"] else c
-                    for c in st.session_state.criteria
+                    for c in st.session_state.Kriterien
                 ]
             else:
-                st.session_state.criteria.append(new_crit)
+                st.session_state.Kriterien.append(new_crit)
             st.session_state.editing_id      = None
             st.session_state.adding_criterion = False
             st.rerun()
@@ -517,13 +516,13 @@ elif page == "② Criteria":
             st.rerun()
 
 # ═══════════════════════════════════════════════════════
-# PAGE 3 – FEW-SHOT EXAMPLES
+# PAGE 3 – Kalibrierungsbeispiele
 # ═══════════════════════════════════════════════════════
-elif page == "③ Few-shot Examples":
-    st.markdown('<div class="step-header">③ Few-shot Examples</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step-sub">For each criterion, you can provide scored reference companies. The model will use these as calibration anchors.</div>', unsafe_allow_html=True)
+elif page == "③ Kalibrierungsbeispiele":
+    st.markdown('<div class="step-header">③ Kalibrierungsbeispiele</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">For each criterion, you can provide scored reference Unternehmen. The model will use these as calibration anchors.</div>', unsafe_allow_html=True)
 
-    for crit_idx, crit in enumerate(st.session_state.criteria):
+    for crit_idx, crit in enumerate(st.session_state.Kriterien):
         with st.expander(f"**{crit['category']} › {crit['name']}** ({crit['scale']}-point scale)  —  {len(crit['examples'])} example(s)"):
             examples = crit["examples"]
 
@@ -542,7 +541,7 @@ elif page == "③ Few-shot Examples":
                         to_remove = ex_idx
 
             if to_remove is not None:
-                st.session_state.criteria[crit_idx]["examples"].pop(to_remove)
+                st.session_state.Kriterien[crit_idx]["examples"].pop(to_remove)
                 st.rerun()
 
             # Add new example
@@ -557,7 +556,7 @@ elif page == "③ Few-shot Examples":
                     ex_reason  = st.text_input("Reasoning", key=f"exr_{crit['id']}")
                 if st.form_submit_button("➕ Add"):
                     if ex_company.strip():
-                        st.session_state.criteria[crit_idx]["examples"].append({
+                        st.session_state.Kriterien[crit_idx]["examples"].append({
                             "company": ex_company.strip(),
                             "score":   ex_score,
                             "reason":  ex_reason.strip(),
@@ -565,55 +564,55 @@ elif page == "③ Few-shot Examples":
                         st.rerun()
 
 # ═══════════════════════════════════════════════════════
-# PAGE 4 – RUN ANALYSIS
+# PAGE 4 – Analyse durchführen
 # ═══════════════════════════════════════════════════════
-elif page == "④ Run Analysis":
-    st.markdown('<div class="step-header">④ Run Analysis</div>', unsafe_allow_html=True)
+elif page == "④ Analyse durchführen":
+    st.markdown('<div class="step-header">④ Analyse durchführen</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">Review your configuration, then launch the benchmark run.</div>', unsafe_allow_html=True)
 
-    companies = [c.strip() for c in st.session_state.companies_text.splitlines() if c.strip()]
-    criteria  = st.session_state.criteria
+    Unternehmen = [c.strip() for c in st.session_state.Unternehmen_text.splitlines() if c.strip()]
+    Kriterien  = st.session_state.Kriterien
 
     # ── Config summary ──
     col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Companies", len(companies))
-    col_b.metric("Criteria",  len(criteria))
-    est_mins = max(1, round(len(companies) * 8 / 60))
+    col_a.metric("Unternehmen", len(Unternehmen))
+    col_b.metric("Kriterien",  len(Kriterien))
+    est_mins = max(1, round(len(Unternehmen) * 8 / 60))
     col_c.metric("Est. runtime", f"~{est_mins} min")
 
     if not api_key:
-        st.warning("⚠️  Please enter your Gemini API key in the sidebar.")
+        st.warning("Bitte Gemini API Key eingeben.")
         st.stop()
-    if not companies:
-        st.warning("⚠️  No companies defined. Go to ① Companies.")
+    if not Unternehmen:
+        st.warning("Keine Unternehmen definiert.")
         st.stop()
-    if not criteria:
-        st.warning("⚠️  No criteria defined. Go to ② Criteria.")
+    if not Kriterien:
+        st.warning("Keine Kriterien definiert.")
         st.stop()
 
     # ── Prompt preview ──
-    with st.expander("👁 Preview prompt (first company)"):
-        st.code(build_prompt(companies[0], criteria), language="markdown")
+    with st.expander("Preview prompt (first company)"):
+        st.code(build_prompt(Unternehmen[0], Kriterien), language="markdown")
 
     st.markdown("---")
 
     # ── Run button ──
-    if st.button("🚀 Start Benchmark Run", type="primary", use_container_width=True):
-        run_analysis(api_key, companies, criteria)
+    if st.button("Start Benchmark Run", type="primary", use_container_width=True):
+        run_analysis(api_key, Unternehmen, Kriterien)
 
     # ── Results ──
     if st.session_state.results:
         st.markdown("---")
         st.markdown("### Results")
-        df = results_to_df(st.session_state.results, criteria)
+        df = results_to_df(st.session_state.results, Kriterien)
         st.dataframe(df, use_container_width=True, height=400)
 
         # Download buttons
         dl_col1, dl_col2 = st.columns(2)
         with dl_col1:
             csv_bytes = df.to_csv(index=False).encode("utf-8")
-            st.download_button("⬇️ Download CSV", csv_bytes, "benchmark_results.csv", "text/csv")
+            st.download_button("⬇️ CSV herunterladen", csv_bytes, "benchmark_results.csv", "text/csv")
         with dl_col2:
             excel_bytes = to_excel(df)
-            st.download_button("⬇️ Download Excel", excel_bytes, "benchmark_results.xlsx",
+            st.download_button("⬇️ Excel herunterladen", excel_bytes, "benchmark_results.xlsx",
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
