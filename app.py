@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-FinTech Benchmark Tool – Streamlit App
-Converted from Google Colab by Claude
-"""
-
 import streamlit as st
 import json
 import re
@@ -27,34 +21,69 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    [data-testid="stSidebar"] { background: #0f1117; }
-    .step-header { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.2rem; }
-    .step-sub   { color: #888; font-size: 0.9rem; margin-bottom: 1.2rem; }
-    .criterion-card {
-        background: #1a1d27;
-        border: 1px solid #2e3347;
-        border-radius: 10px;
-        padding: 1.1rem 1.2rem;
-        margin-bottom: 0.8rem;
-    }
-    .tag {
-        display: inline-block;
-        background: #2e3347;
-        color: #aab;
-        border-radius: 4px;
-        padding: 1px 8px;
-        font-size: 0.75rem;
-        margin-right: 4px;
-    }
-    .score-pill {
-        display: inline-block;
-        background: #1d4ed8;
-        color: white;
-        border-radius: 999px;
-        padding: 2px 10px;
-        font-size: 0.8rem;
-        font-weight: 600;
-    }
+
+/* Sidebar Hintergrundfarbe */
+[data-testid="stSidebar"] {
+    background-color: rgb(72, 99, 117);
+}
+
+/* Sidebar Schriftfarbe komplett weiß */
+[data-testid="stSidebar"] * {
+    color: white !important;
+}
+
+/* Optional: Sidebar Inputs ebenfalls weiß */
+[data-testid="stSidebar"] .stTextInput input,
+[data-testid="stSidebar"] .stTextArea textarea {
+    color: white !important;
+}
+
+/* Optional: Radio Buttons & Labels */
+[data-testid="stSidebar"] .stRadio label {
+    color: white !important;
+}
+
+/* Deine bestehenden UI Styles bleiben erhalten */
+.step-header {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+}
+
+.step-sub {
+    color: #888;
+    font-size: 0.9rem;
+    margin-bottom: 1.2rem;
+}
+
+.criterion-card {
+    background: #1a1d27;
+    border: 1px solid #2e3347;
+    border-radius: 10px;
+    padding: 1.1rem 1.2rem;
+    margin-bottom: 0.8rem;
+}
+
+.tag {
+    display: inline-block;
+    background: #2e3347;
+    color: #aab;
+    border-radius: 4px;
+    padding: 1px 8px;
+    font-size: 0.75rem;
+    margin-right: 4px;
+}
+
+.score-pill {
+    display: inline-block;
+    background: #1d4ed8;
+    color: white;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
