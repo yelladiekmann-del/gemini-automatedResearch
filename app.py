@@ -172,6 +172,205 @@ with st.sidebar:
     st.markdown(f"📋 **{n_criteria}** criteria")
     st.markdown(f"✅ **{n_results}** results ready")
 
+
+# ═══════════════════════════════════════════════════════
+# HELPER FUNCTIONS  (defined after pages so Streamlit doesn't complain)
+# ═══════════════════════════════════════════════════════
+
+def build_prompt(company_name: str, criteria: list) -> str:
+    """Dynamically build the analysis prompt from criteria config."""
+
+    # Build criteria block
+    criteria_block = ""
+    for i, c in enumerate(criteria, 1):
+        criteria_block += f"""
+{i}. {c['category'].upper()} – {c['name']}
+
+{c['description']}
+
+Skalenanker:
+1 = {c['anchor_low']}
+{c['scale']} = {c['anchor_high']}
+"""
+        if c.get("examples"):
+            criteria_block += "\nKalibrierungsbeispiele:\n"
+            for ex in c["examples"]:
+                criteria_block += f"  • {ex['company']}: Score {ex['score']} — {ex['reason']}\n"
+        criteria_block += "\n---\n"
+
+    # Build JSON schema example
+    json_example_items = ""
+    for c in criteria:
+        json_example_items += f"""    {{
+      "kategorie": "{c['category']}",
+      "kriterium": "{c['name']}",
+      "score": "1-{c['scale']}",
+      "begruendung": "...",
+      "quellen": ["URL1", "URL2"]
+    }},
+"""
+
+    prompt = f"""<rolle>
+Du bist ein unabhängiger, erfahrener Finanz- und Strategieberater.
+Du arbeitest faktenbasiert, kritisch, vergleichend und nachvollziehbar.
+</rolle>
+
+<kontext>
+Du bewertest Finanz- und FinTech-Unternehmen anhand öffentlich zugänglicher Informationen
+(z. B. Unternehmenswebsites, Geschäftsberichte, Pressemitteilungen, regulatorische Veröffentlichungen).
+Das aktuelle Jahr ist 2025.
+</kontext>
+
+<aufgabe>
+Analysiere und bewerte das folgende Unternehmen anhand der definierten Kriterien.
+
+Unternehmen: {company_name}
+
+Führe dafür eine gezielte Web-Recherche durch.
+Nutze ausschließlich öffentlich zugängliche, überprüfbare Quellen.
+Wenn Informationen fehlen, veraltet oder nicht eindeutig belegbar sind, weise explizit darauf hin. Keine Spekulation.
+</aufgabe>
+
+<bewertungssystem>
+Verwende für JEDE Teilkategorie die angegebene Likert-Skala (je Kriterium 3, 4 oder 5 Punkte).
+Bewerte stets relativ zu anderen Finanz- und FinTech-Unternehmen, nicht absolut oder idealtypisch.
+Alle Bewertungen müssen logisch aus den gefundenen Fakten ableitbar sein.
+</bewertungssystem>
+
+<kriterien>
+{criteria_block}
+</kriterien>
+
+<ausgabeformat>
+Gib die Antwort AUSSCHLIESSLICH als valides JSON zurück – kein Text außerhalb des JSON.
+
+{{
+  "unternehmen": "{company_name}",
+  "bewertungen": [
+{json_example_items.rstrip(',\n')}
+  ],
+  "hinweise_zur_datenlage": "Optionale Hinweise zu Datenlücken oder eingeschränkter Vergleichbarkeit."
+}}
+</ausgabeformat>
+
+<finale_anweisung>
+Arbeite strukturiert, konsistent und faktenbasiert.
+Priorisiere Nachvollziehbarkeit, Vergleichbarkeit und Transparenz.
+Keine Inhalte außerhalb des JSON ausgeben.
+</finale_anweisung>
+"""
+    return prompt
+
+
+def extract_json(text: str):
+    try:
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+    except Exception:
+        pass
+    return None
+
+
+def parse_response(data: dict, company: str, criteria: list) -> dict:
+    """Flatten the JSON response into a row dict."""
+    row = {"Unternehmen": company, "Status": "OK"}
+    bewertungen = data.get("bewertungen", [])
+
+    # Map by (category, name) for robust lookup
+    lookup = {}
+    for b in bewertungen:
+        key = (b.get("kategorie", "").strip(), b.get("kriterium", "").strip())
+        lookup[key] = b
+
+    for c in criteria:
+        col_base = f"{c['category']} › {c['name']}"
+        b = lookup.get((c["category"], c["name"]), {})
+        row[f"{col_base} | Score"]       = b.get("score", "")
+        row[f"{col_base} | Begründung"]  = b.get("begruendung", "")
+        row[f"{col_base} | Quellen"]     = "; ".join(b.get("quellen", []))
+
+    row["Hinweise Datenlage"] = data.get("hinweise_zur_datenlage", "")
+    return row
+
+
+def results_to_df(results: list, criteria: list) -> pd.DataFrame:
+    return pd.DataFrame(results)
+
+
+def to_excel(df: pd.DataFrame) -> bytes:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Benchmark")
+    return buf.getvalue()
+
+
+def run_analysis(api_key: str, companies: list, criteria: list):
+    """Run the full benchmark analysis with progress tracking."""
+    try:
+        from google import genai as genai_client
+        from google.genai import types
+    except ImportError:
+        st.error("google-genai package not installed. Run: pip install google-genai")
+        return
+
+    client = genai_client.Client(api_key=api_key)
+    grounding_tool = types.Tool(google_search=types.GoogleSearch())
+    config = types.GenerateContentConfig(tools=[grounding_tool])
+
+    results = []
+    progress_bar = st.progress(0)
+    status_text  = st.empty()
+    log_area     = st.empty()
+    log_lines    = []
+
+    for idx, company in enumerate(companies):
+        pct = idx / len(companies)
+        progress_bar.progress(pct)
+        status_text.markdown(f"**Processing {idx+1}/{len(companies)}: {company}**")
+
+        try:
+            prompt   = build_prompt(company, criteria)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+                config=config,
+            )
+
+            # Collect grounding sources
+            sources = []
+            try:
+                metadata = response.candidates[0].grounding_metadata
+                if metadata and metadata.grounding_chunks:
+                    for chunk in metadata.grounding_chunks:
+                        if chunk.web:
+                            sources.append(f"{chunk.web.title}: {chunk.web.uri}")
+            except Exception:
+                pass
+
+            data = extract_json(response.text)
+            if data and "bewertungen" in data:
+                row = parse_response(data, company, criteria)
+                row["_raw_json"]    = response.text[:2000]
+                row["_all_sources"] = "\n".join(set(sources))
+                results.append(row)
+                log_lines.append(f"✅ {company}")
+            else:
+                results.append({"Unternehmen": company, "Status": "Parse error – no JSON found"})
+                log_lines.append(f"⚠️  {company} — JSON parse failed")
+
+        except Exception as e:
+            results.append({"Unternehmen": company, "Status": f"Error: {str(e)}"})
+            log_lines.append(f"❌ {company} — {str(e)}")
+
+        log_area.code("\n".join(log_lines[-15:]))
+        time.sleep(3)  # rate limiting
+
+    progress_bar.progress(1.0)
+    status_text.markdown("**✅ Run complete!**")
+    st.session_state.results = results
+    st.rerun()
+    
 # ═══════════════════════════════════════════════════════
 # PAGE 1 – COMPANIES
 # ═══════════════════════════════════════════════════════
@@ -418,202 +617,3 @@ elif page == "④ Run Analysis":
             excel_bytes = to_excel(df)
             st.download_button("⬇️ Download Excel", excel_bytes, "benchmark_results.xlsx",
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-
-# ═══════════════════════════════════════════════════════
-# HELPER FUNCTIONS  (defined after pages so Streamlit doesn't complain)
-# ═══════════════════════════════════════════════════════
-
-def build_prompt(company_name: str, criteria: list) -> str:
-    """Dynamically build the analysis prompt from criteria config."""
-
-    # Build criteria block
-    criteria_block = ""
-    for i, c in enumerate(criteria, 1):
-        criteria_block += f"""
-{i}. {c['category'].upper()} – {c['name']}
-
-{c['description']}
-
-Skalenanker:
-1 = {c['anchor_low']}
-{c['scale']} = {c['anchor_high']}
-"""
-        if c.get("examples"):
-            criteria_block += "\nKalibrierungsbeispiele:\n"
-            for ex in c["examples"]:
-                criteria_block += f"  • {ex['company']}: Score {ex['score']} — {ex['reason']}\n"
-        criteria_block += "\n---\n"
-
-    # Build JSON schema example
-    json_example_items = ""
-    for c in criteria:
-        json_example_items += f"""    {{
-      "kategorie": "{c['category']}",
-      "kriterium": "{c['name']}",
-      "score": "1-{c['scale']}",
-      "begruendung": "...",
-      "quellen": ["URL1", "URL2"]
-    }},
-"""
-
-    prompt = f"""<rolle>
-Du bist ein unabhängiger, erfahrener Finanz- und Strategieberater.
-Du arbeitest faktenbasiert, kritisch, vergleichend und nachvollziehbar.
-</rolle>
-
-<kontext>
-Du bewertest Finanz- und FinTech-Unternehmen anhand öffentlich zugänglicher Informationen
-(z. B. Unternehmenswebsites, Geschäftsberichte, Pressemitteilungen, regulatorische Veröffentlichungen).
-Das aktuelle Jahr ist 2025.
-</kontext>
-
-<aufgabe>
-Analysiere und bewerte das folgende Unternehmen anhand der definierten Kriterien.
-
-Unternehmen: {company_name}
-
-Führe dafür eine gezielte Web-Recherche durch.
-Nutze ausschließlich öffentlich zugängliche, überprüfbare Quellen.
-Wenn Informationen fehlen, veraltet oder nicht eindeutig belegbar sind, weise explizit darauf hin. Keine Spekulation.
-</aufgabe>
-
-<bewertungssystem>
-Verwende für JEDE Teilkategorie die angegebene Likert-Skala (je Kriterium 3, 4 oder 5 Punkte).
-Bewerte stets relativ zu anderen Finanz- und FinTech-Unternehmen, nicht absolut oder idealtypisch.
-Alle Bewertungen müssen logisch aus den gefundenen Fakten ableitbar sein.
-</bewertungssystem>
-
-<kriterien>
-{criteria_block}
-</kriterien>
-
-<ausgabeformat>
-Gib die Antwort AUSSCHLIESSLICH als valides JSON zurück – kein Text außerhalb des JSON.
-
-{{
-  "unternehmen": "{company_name}",
-  "bewertungen": [
-{json_example_items.rstrip(',\n')}
-  ],
-  "hinweise_zur_datenlage": "Optionale Hinweise zu Datenlücken oder eingeschränkter Vergleichbarkeit."
-}}
-</ausgabeformat>
-
-<finale_anweisung>
-Arbeite strukturiert, konsistent und faktenbasiert.
-Priorisiere Nachvollziehbarkeit, Vergleichbarkeit und Transparenz.
-Keine Inhalte außerhalb des JSON ausgeben.
-</finale_anweisung>
-"""
-    return prompt
-
-
-def extract_json(text: str):
-    try:
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-    except Exception:
-        pass
-    return None
-
-
-def parse_response(data: dict, company: str, criteria: list) -> dict:
-    """Flatten the JSON response into a row dict."""
-    row = {"Unternehmen": company, "Status": "OK"}
-    bewertungen = data.get("bewertungen", [])
-
-    # Map by (category, name) for robust lookup
-    lookup = {}
-    for b in bewertungen:
-        key = (b.get("kategorie", "").strip(), b.get("kriterium", "").strip())
-        lookup[key] = b
-
-    for c in criteria:
-        col_base = f"{c['category']} › {c['name']}"
-        b = lookup.get((c["category"], c["name"]), {})
-        row[f"{col_base} | Score"]       = b.get("score", "")
-        row[f"{col_base} | Begründung"]  = b.get("begruendung", "")
-        row[f"{col_base} | Quellen"]     = "; ".join(b.get("quellen", []))
-
-    row["Hinweise Datenlage"] = data.get("hinweise_zur_datenlage", "")
-    return row
-
-
-def results_to_df(results: list, criteria: list) -> pd.DataFrame:
-    return pd.DataFrame(results)
-
-
-def to_excel(df: pd.DataFrame) -> bytes:
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Benchmark")
-    return buf.getvalue()
-
-
-def run_analysis(api_key: str, companies: list, criteria: list):
-    """Run the full benchmark analysis with progress tracking."""
-    try:
-        from google import genai as genai_client
-        from google.genai import types
-    except ImportError:
-        st.error("google-genai package not installed. Run: pip install google-genai")
-        return
-
-    client = genai_client.Client(api_key=api_key)
-    grounding_tool = types.Tool(google_search=types.GoogleSearch())
-    config = types.GenerateContentConfig(tools=[grounding_tool])
-
-    results = []
-    progress_bar = st.progress(0)
-    status_text  = st.empty()
-    log_area     = st.empty()
-    log_lines    = []
-
-    for idx, company in enumerate(companies):
-        pct = idx / len(companies)
-        progress_bar.progress(pct)
-        status_text.markdown(f"**Processing {idx+1}/{len(companies)}: {company}**")
-
-        try:
-            prompt   = build_prompt(company, criteria)
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-                config=config,
-            )
-
-            # Collect grounding sources
-            sources = []
-            try:
-                metadata = response.candidates[0].grounding_metadata
-                if metadata and metadata.grounding_chunks:
-                    for chunk in metadata.grounding_chunks:
-                        if chunk.web:
-                            sources.append(f"{chunk.web.title}: {chunk.web.uri}")
-            except Exception:
-                pass
-
-            data = extract_json(response.text)
-            if data and "bewertungen" in data:
-                row = parse_response(data, company, criteria)
-                row["_raw_json"]    = response.text[:2000]
-                row["_all_sources"] = "\n".join(set(sources))
-                results.append(row)
-                log_lines.append(f"✅ {company}")
-            else:
-                results.append({"Unternehmen": company, "Status": "Parse error – no JSON found"})
-                log_lines.append(f"⚠️  {company} — JSON parse failed")
-
-        except Exception as e:
-            results.append({"Unternehmen": company, "Status": f"Error: {str(e)}"})
-            log_lines.append(f"❌ {company} — {str(e)}")
-
-        log_area.code("\n".join(log_lines[-15:]))
-        time.sleep(3)  # rate limiting
-
-    progress_bar.progress(1.0)
-    status_text.markdown("**✅ Run complete!**")
-    st.session_state.results = results
-    st.rerun()
