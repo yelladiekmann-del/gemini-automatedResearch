@@ -1,4 +1,3 @@
-import streamlit as st
 import json
 import re
 import time
@@ -6,47 +5,14 @@ import uuid
 import pandas as pd
 from io import BytesIO
 from copy import deepcopy
-from streamlit_google_auth import Authenticate
 
 # ─────────────────────────────────────────────
-# AUTHENTIFIZIERUNG (DOMAIN-SCHUTZ)
-# ─────────────────────────────────────────────
-# Initialisierung mit Daten aus st.secrets
-auth = Authenticate(
-    secret_credentials_path=None,
-    cookie_name='gemini_tool_auth',
-    key='auth_key',
-    client_id=st.secrets["GOOGLE_CLIENT_ID"],
-    client_secret=st.secrets["GOOGLE_CLIENT_SECRET"],
-    redirect_uri=st.secrets["REDIRECT_URI"],
-)
-
-# Prüfen, ob der User eingeloggt ist
-auth.check_authenticity()
-
-if st.session_state['auth_status'] != True:
-    st.title("Zutritt verweigert")
-    st.info("Bitte mit Ihrem Unternehmenskonto anmelden, um das Tool zu nutzen.")
-    auth.login()
-    st.stop()
-
-# Domain-Check: Nur @deinefirma.de zulassen
-user_email = st.session_state['user_info'].get('email', '')
-ALLOWED_DOMAIN = "deinefirma.de" # Hier deine Domain eintragen
-
-if not user_email.endswith(f"@{ALLOWED_DOMAIN}"):
-    st.error(f"Zugriff verweigert. Dieses Tool ist nur für @{ALLOWED_DOMAIN} Adressen.")
-    if st.button("Abmelden"):
-        auth.logout()
-    st.stop()
-
-# ─────────────────────────────────────────────
-# PAGE CONFIG (Wird nur erreicht, wenn Auth erfolgreich)
+# PAGE CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="Automatisiertes Gemini Research Tool",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="Automatisiertes Gemini Research Tool",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # ─────────────────────────────────────────────
