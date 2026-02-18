@@ -242,9 +242,17 @@ PAGES = [
 with st.sidebar:
     st.markdown("## Automatisiertes Gemini Research Tool")
 
-    # Key wird im Hintergrund geladen (kein Eingabefeld)
-    # Falls der Key in Streamlit Cloud unter Settings -> Secrets hinterlegt ist:
-    api_key = st.secrets.get("GEMINI_API_KEY", "")
+    # API Key input field for users
+    api_key = st.text_input(
+        "Gemini API Key",
+        type="password",
+        placeholder="Gib deinen API Key ein...",
+        help="Erhalte deinen Key von https://aistudio.google.com/app/apikey"
+    )
+    
+    # Fallback: Load from Streamlit secrets if available
+    if not api_key:
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
     
     # Schritt-Anzeige in der Sidebar
     page = PAGES[st.session_state.page_index]
