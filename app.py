@@ -43,44 +43,106 @@ st.markdown("""
     color: white !important;
 }
 
-/* Deine bestehenden UI Styles bleiben erhalten */
-.step-header {
-    font-size: 1.4rem;
-    font-weight: 700;
-    margin-bottom: 0.2rem;
-}
-
-.step-sub {
-    color: #888;
-    font-size: 0.9rem;
-    margin-bottom: 1.2rem;
-}
-
+/* Verbesserte Criterion Card */
 .criterion-card {
-    background: #1a1d27;
-    border: 1px solid #2e3347;
-    border-radius: 10px;
-    padding: 1.1rem 1.2rem;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 1.4rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    transition: all 0.2s ease;
+}
+
+.criterion-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: #d0d0d0;
+}
+
+.criterion-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 0.5rem;
+}
+
+.criterion-description {
+    color: #6b7280;
+    font-size: 0.95rem;
     margin-bottom: 0.8rem;
+    line-height: 1.4;
+}
+
+.criterion-anchors {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.anchor-box {
+    padding: 0.8rem;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    line-height: 1.4;
+}
+
+.anchor-low {
+    background: #fef3c7;
+    color: #92400e;
+    border-left: 3px solid #fbbf24;
+}
+
+.anchor-high {
+    background: #d1fae5;
+    color: #065f46;
+    border-left: 3px solid #10b981;
 }
 
 .tag {
     display: inline-block;
-    background: #2e3347;
-    color: #aab;
-    border-radius: 4px;
-    padding: 1px 8px;
+    background: #e5e7eb;
+    color: #374151;
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
     font-size: 0.75rem;
-    margin-right: 4px;
+    font-weight: 500;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
 }
 
+.step-header {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: #1f2937;
+}
+
+.step-sub {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Navigation Buttons */
+.nav-container {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+/* Score Pill */
 .score-pill {
     display: inline-block;
-    background: #1d4ed8;
+    background: #3b82f6;
     color: white;
     border-radius: 999px;
-    padding: 2px 10px;
-    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
     font-weight: 600;
 }
 
@@ -186,7 +248,7 @@ PAGES = [
 ]
 
 # ─────────────────────────────────────────────
-# SIDEBAR – API KEY & NAV
+# SIDEBAR – API KEY & STATUS
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## Automatisiertes Gemini Research Tool")
@@ -200,28 +262,7 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("**Navigation**")
-
-    current_page = PAGES[st.session_state.page_index]
-    st.markdown(f"Aktuelle Seite: {current_page}")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.session_state.page_index > 0:
-            if st.button("Zurück"):
-                st.session_state.page_index -= 1
-                st.rerun()
-
-    with col2:
-        if st.session_state.page_index < len(PAGES) - 1:
-            if st.button("Weiter"):
-                st.session_state.page_index += 1
-                st.rerun()
-
-    page = current_page
-
-    st.markdown("---")
+    st.markdown("**Status**")
 
     n_Unternehmen = len([c for c in st.session_state.Unternehmen_text.splitlines() if c.strip()])
     n_Kriterien  = len(st.session_state.Kriterien)
@@ -232,13 +273,12 @@ with st.sidebar:
     st.markdown(f"**{n_results}** Ergebnisse verfügbar")
 
 # ═══════════════════════════════════════════════════════
-# HELPER FUNCTIONS  (defined after pages so Streamlit doesn't complain)
+# HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════
 
 def build_prompt(company_name: str, Kriterien: list) -> str:
     """Dynamically build the analysis prompt from Kriterien config."""
 
-    # Build Kriterien block
     Kriterien_block = ""
     for i, c in enumerate(Kriterien, 1):
         Kriterien_block += f"""
@@ -256,7 +296,6 @@ Skalenanker:
                 Kriterien_block += f"  • {ex['company']}: Score {ex['score']} — {ex['reason']}\n"
         Kriterien_block += "\n---\n"
 
-    # Build JSON schema example
     json_example_items = ""
     for c in Kriterien:
         json_example_items += f"""    {{
@@ -335,7 +374,6 @@ def parse_response(data: dict, company: str, Kriterien: list) -> dict:
     row = {"Unternehmen": company, "Status": "OK"}
     bewertungen = data.get("bewertungen", [])
 
-    # Map by (category, name) for robust lookup
     lookup = {}
     for b in bewertungen:
         key = (b.get("kategorie", "").strip(), b.get("kriterium", "").strip())
@@ -369,7 +407,7 @@ def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
         from google import genai as genai_client
         from google.genai import types
     except ImportError:
-        st.error("google-genai package not installed. Run: pip install google-genai")
+        st.error("google-genai package nicht installiert. Ausführen: pip install google-genai")
         return
 
     client = genai_client.Client(api_key=api_key)
@@ -385,7 +423,7 @@ def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
     for idx, company in enumerate(Unternehmen):
         pct = idx / len(Unternehmen)
         progress_bar.progress(pct)
-        status_text.markdown(f"**Processing {idx+1}/{len(Unternehmen)}: {company}**")
+        status_text.markdown(f"**Verarbeite {idx+1}/{len(Unternehmen)}: {company}**")
 
         try:
             prompt   = build_prompt(company, Kriterien)
@@ -395,7 +433,6 @@ def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
                 config=config,
             )
 
-            # Collect grounding sources
             sources = []
             try:
                 metadata = response.candidates[0].grounding_metadata
@@ -414,24 +451,56 @@ def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
                 results.append(row)
                 log_lines.append(f"{company}")
             else:
-                results.append({"Unternehmen": company, "Status": "Parse error – no JSON found"})
-                log_lines.append(f"{company} — JSON parse failed")
+                results.append({"Unternehmen": company, "Status": "Parse-Fehler – kein JSON gefunden"})
+                log_lines.append(f"{company} — JSON-Parse fehlgeschlagen")
 
         except Exception as e:
-            results.append({"Unternehmen": company, "Status": f"Error: {str(e)}"})
+            results.append({"Unternehmen": company, "Status": f"Fehler: {str(e)}"})
             log_lines.append(f"{company} — {str(e)}")
 
         log_area.code("\n".join(log_lines[-15:]))
-        time.sleep(3)  # rate limiting
+        time.sleep(3)
 
     progress_bar.progress(1.0)
-    status_text.markdown("**Run complete!**")
+    status_text.markdown("**Analyse abgeschlossen!**")
     st.session_state.results = results
     st.rerun()
+
+
+def render_navigation():
+    """Render navigation buttons on the page."""
+    col1, col2, col3, col4 = st.columns([1, 1, 10, 1])
     
+    with col1:
+        if st.session_state.page_index > 0:
+            if st.button("Zurück", use_container_width=True):
+                st.session_state.page_index -= 1
+                st.rerun()
+        else:
+            st.write("")
+    
+    with col2:
+        if st.session_state.page_index < len(PAGES) - 1:
+            if st.button("Weiter", use_container_width=True):
+                st.session_state.page_index += 1
+                st.rerun()
+        else:
+            st.write("")
+    
+    with col3:
+        page_name = PAGES[st.session_state.page_index]
+        st.markdown(f"**Schritt {st.session_state.page_index + 1}/{len(PAGES)}:** {page_name}")
+    
+    with col4:
+        st.write("")
+
+    st.markdown('<div style="margin-bottom: 1.5rem;"></div>', unsafe_allow_html=True)
+
 # ═══════════════════════════════════════════════════════
 # PAGE 0 – ÜBERBLICK
 # ═══════════════════════════════════════════════════════
+page = PAGES[st.session_state.page_index]
+
 if page == "Überblick":
     st.markdown("## Willkommen zum automatisierten Gemini Research Tool")
 
@@ -452,16 +521,18 @@ if page == "Überblick":
     - Schritt 4: Analyse starten
     """)
 
-    if st.button("Analyse starten"):
+    if st.button("Zur Analyse starten", use_container_width=True, type="primary"):
         st.session_state.page_index = 1
         st.rerun()
 
 # ═══════════════════════════════════════════════════════
-# PAGE 1 – Unternehmen
+# PAGE 1 – UNTERNEHMEN
 # ═══════════════════════════════════════════════════════
-if page == "Unternehmen":
-    st.markdown('<div class="step-header">① Company List</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step-sub">One company name per line. The tool will research each one in order.</div>', unsafe_allow_html=True)
+elif page == "Unternehmen":
+    render_navigation()
+    
+    st.markdown('<div class="step-header">Unternehmen definieren</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">Ein Unternehmensname pro Zeile. Das Tool recherchiert jedes nacheinander.</div>', unsafe_allow_html=True)
 
     col_left, col_right = st.columns([2, 1])
     with col_left:
@@ -476,52 +547,63 @@ if page == "Unternehmen":
 
     with col_right:
         Unternehmen = [c.strip() for c in raw.splitlines() if c.strip()]
-        st.markdown(f"**{len(Unternehmen)} Unternehmen loaded**")
+        st.markdown(f"**{len(Unternehmen)} Unternehmen geladen**")
         st.markdown("---")
         for c in Unternehmen[:20]:
             st.markdown(f"• {c}")
         if len(Unternehmen) > 20:
-            st.markdown(f"*…and {len(Unternehmen)-20} more*")
+            st.markdown(f"*...und {len(Unternehmen)-20} weitere*")
         st.markdown("---")
-        if st.button("🔄 Reset to defaults"):
+        if st.button("Auf Standard zurücksetzen"):
             st.session_state.Unternehmen_text = DEFAULT_Unternehmen
             st.rerun()
 
 # ═══════════════════════════════════════════════════════
-# PAGE 2 – Kriterien
+# PAGE 2 – KRITERIEN
 # ═══════════════════════════════════════════════════════
 elif page == "Kriterien":
-    st.markdown('<div class="step-header">② Scoring Kriterien</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step-sub">Define what gets scored and how. Each criterion uses a Likert scale anchored at 1 (low) and N (high).</div>', unsafe_allow_html=True)
+    render_navigation()
+    
+    st.markdown('<div class="step-header">Bewertungskriterien definieren</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">Definiere, was bewertet wird und wie. Jedes Kriterium verwendet eine Likert-Skala von 1 (niedrig) bis N (hoch).</div>', unsafe_allow_html=True)
 
-    # ── Existing Kriterien ──
     to_delete = None
-    to_edit   = None
 
     for idx, crit in enumerate(st.session_state.Kriterien):
         with st.container():
             st.markdown(f"""
             <div class="criterion-card">
-                <span class="tag">{crit['category']}</span>
-                <span class="tag">{crit['scale']}-point</span>
-                <strong style="font-size:1.05rem">&nbsp;{crit['name']}</strong>
-                <p style="color:#aab;font-size:0.88rem;margin:0.4rem 0 0.2rem">{crit['description']}</p>
-                <p style="color:#66f;font-size:0.82rem;margin:0">1 = {crit['anchor_low'][:80]}…</p>
-                <p style="color:#6f6;font-size:0.82rem;margin:0">{crit['scale']} = {crit['anchor_high'][:80]}…</p>
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <span class="tag">{crit['category']}</span>
+                    <span class="tag">Skala: 1–{crit['scale']}</span>
+                </div>
+                <div class="criterion-title">{crit['name']}</div>
+                <div class="criterion-description">{crit['description']}</div>
+                <div class="criterion-anchors">
+                    <div class="anchor-box anchor-low">
+                        <strong>Wert 1 (niedrig)</strong><br/>
+                        {crit['anchor_low']}
+                    </div>
+                    <div class="anchor-box anchor-high">
+                        <strong>Wert {crit['scale']} (hoch)</strong><br/>
+                        {crit['anchor_high']}
+                    </div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
             btn_col1, btn_col2, btn_col3, _ = st.columns([1, 1, 1, 5])
             with btn_col1:
-                if st.button("Edit", key=f"edit_{crit['id']}"):
+                if st.button("Bearbeiten", key=f"edit_{crit['id']}", use_container_width=True):
                     st.session_state.editing_id = crit["id"]
                     st.rerun()
             with btn_col2:
-                if st.button("Delete", key=f"del_{crit['id']}"):
+                if st.button("Löschen", key=f"del_{crit['id']}", use_container_width=True):
                     to_delete = crit["id"]
             with btn_col3:
                 n_ex = len(crit.get("examples", []))
-                st.markdown(f"<span style='font-size:0.8rem;color:#888'>{n_ex} example(s)</span>", unsafe_allow_html=True)
+                ex_text = "Beispiel" if n_ex == 1 else "Beispiele"
+                st.markdown(f"<span style='font-size:0.8rem;color:#888'>{n_ex} {ex_text}</span>", unsafe_allow_html=True)
 
     if to_delete:
         st.session_state.Kriterien = [c for c in st.session_state.Kriterien if c["id"] != to_delete]
@@ -529,50 +611,48 @@ elif page == "Kriterien":
 
     st.markdown("---")
 
-    # ── Edit or Add Form ──
     editing = st.session_state.editing_id is not None
     adding  = st.session_state.adding_criterion
 
     if not editing and not adding:
         col1, col2 = st.columns([1, 5])
         with col1:
-            if st.button("➕ Add criterion"):
+            if st.button("Kriterium hinzufügen", use_container_width=True):
                 st.session_state.adding_criterion = True
                 st.rerun()
         with col2:
-            if st.button("Reset all to defaults"):
+            if st.button("Alle auf Standard zurücksetzen", use_container_width=True):
                 st.session_state.Kriterien = deepcopy(DEFAULT_Kriterien)
                 st.rerun()
 
     else:
-        # Populate existing values if editing
         existing = {}
         if editing:
             for c in st.session_state.Kriterien:
                 if c["id"] == st.session_state.editing_id:
                     existing = c
                     break
-            st.subheader("✏️ Edit Criterion")
+            st.subheader("Kriterium bearbeiten")
         else:
-            st.subheader("➕ New Criterion")
+            st.subheader("Neues Kriterium")
 
         with st.form("criterion_form"):
-            f_category = st.text_input("Category",       value=existing.get("category", ""))
-            f_name     = st.text_input("Criterion name", value=existing.get("name", ""))
-            f_desc     = st.text_area("Description (shown to the model)",
+            f_category = st.text_input("Kategorie",       value=existing.get("category", ""))
+            f_name     = st.text_input("Kriterium-Name", value=existing.get("name", ""))
+            f_desc     = st.text_area("Beschreibung (wird dem Modell angezeigt)",
                                       value=existing.get("description", ""), height=90)
-            f_scale    = st.selectbox("Scale",  [3, 4, 5],
+            f_scale    = st.selectbox("Skala",  [3, 4, 5],
                                       index=[3,4,5].index(existing.get("scale", 4)))
-            f_low      = st.text_area(f"Anchor for 1 (lowest)",
+            f_low      = st.text_area(f"Anker für 1 (niedrigster Wert)",
                                       value=existing.get("anchor_low",  ""), height=70)
-            f_high     = st.text_area(f"Anchor for {f_scale} (highest)",
+            f_high     = st.text_area(f"Anker für {f_scale} (höchster Wert)",
                                       value=existing.get("anchor_high", ""), height=70)
 
             save_col, cancel_col = st.columns([1, 1])
             with save_col:
-                submitted = st.form_submit_button("Save")
+                submitted = st.form_submit_button("Speichern")
             with cancel_col:
-                cancelled = st.form_submit_button("✖ Cancel")
+                cancelled = st.form_submit_button("Abbrechen")
 
         if submitted:
             new_crit = {
@@ -602,17 +682,18 @@ elif page == "Kriterien":
             st.rerun()
 
 # ═══════════════════════════════════════════════════════
-# PAGE 3 – Kalibrierungsbeispiele
+# PAGE 3 – KALIBRIERUNGSBEISPIELE
 # ═══════════════════════════════════════════════════════
 elif page == "Kalibrierungsbeispiele":
-    st.markdown('<div class="step-header">③ Kalibrierungsbeispiele</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step-sub">For each criterion, you can provide scored reference Unternehmen. The model will use these as calibration anchors.</div>', unsafe_allow_html=True)
+    render_navigation()
+    
+    st.markdown('<div class="step-header">Kalibrierungsbeispiele</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">Für jedes Kriterium kannst du bewertete Referenz-Unternehmen angeben. Das Modell nutzt diese als Ankerpunkte.</div>', unsafe_allow_html=True)
 
     for crit_idx, crit in enumerate(st.session_state.Kriterien):
-        with st.expander(f"**{crit['category']} › {crit['name']}** ({crit['scale']}-point scale)  —  {len(crit['examples'])} example(s)"):
+        with st.expander(f"**{crit['category']} › {crit['name']}** (Skala 1–{crit['scale']})  —  {len(crit['examples'])} Beispiel(e)"):
             examples = crit["examples"]
 
-            # Display + delete existing examples
             to_remove = None
             for ex_idx, ex in enumerate(examples):
                 col_score, col_company, col_reason, col_del = st.columns([1, 2, 5, 1])
@@ -621,26 +702,25 @@ elif page == "Kalibrierungsbeispiele":
                 with col_company:
                     st.markdown(f"**{ex['company']}**")
                 with col_reason:
-                    st.markdown(f"<span style='color:#aab;font-size:0.88rem'>{ex['reason']}</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='color:#6b7280;font-size:0.88rem'>{ex['reason']}</span>", unsafe_allow_html=True)
                 with col_del:
-                    if st.button("✖", key=f"rm_ex_{crit['id']}_{ex_idx}"):
+                    if st.button("Löschen", key=f"rm_ex_{crit['id']}_{ex_idx}", use_container_width=True):
                         to_remove = ex_idx
 
             if to_remove is not None:
                 st.session_state.Kriterien[crit_idx]["examples"].pop(to_remove)
                 st.rerun()
 
-            # Add new example
-            st.markdown("**Add example**")
+            st.markdown("**Beispiel hinzufügen**")
             with st.form(f"ex_form_{crit['id']}"):
                 ex_col1, ex_col2, ex_col3 = st.columns([2, 1, 4])
                 with ex_col1:
-                    ex_company = st.text_input("Company", key=f"exc_{crit['id']}")
+                    ex_company = st.text_input("Unternehmen", key=f"exc_{crit['id']}")
                 with ex_col2:
-                    ex_score   = st.selectbox("Score", list(range(1, crit["scale"] + 1)), key=f"exs_{crit['id']}")
+                    ex_score   = st.selectbox("Wert", list(range(1, crit["scale"] + 1)), key=f"exs_{crit['id']}")
                 with ex_col3:
-                    ex_reason  = st.text_input("Reasoning", key=f"exr_{crit['id']}")
-                if st.form_submit_button("➕ Add"):
+                    ex_reason  = st.text_input("Begründung", key=f"exr_{crit['id']}")
+                if st.form_submit_button("Hinzufügen"):
                     if ex_company.strip():
                         st.session_state.Kriterien[crit_idx]["examples"].append({
                             "company": ex_company.strip(),
@@ -650,24 +730,25 @@ elif page == "Kalibrierungsbeispiele":
                         st.rerun()
 
 # ═══════════════════════════════════════════════════════
-# PAGE 4 – Analyse durchführen
+# PAGE 4 – ANALYSE DURCHFÜHREN
 # ═══════════════════════════════════════════════════════
 elif page == "Analyse durchführen":
-    st.markdown('<div class="step-header">④ Analyse durchführen</div>', unsafe_allow_html=True)
-    st.markdown('<div class="step-sub">Review your configuration, then launch the benchmark run.</div>', unsafe_allow_html=True)
+    render_navigation()
+    
+    st.markdown('<div class="step-header">Analyse durchführen</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-sub">Überprüfe deine Konfiguration und starte die Benchmark-Analyse.</div>', unsafe_allow_html=True)
 
     Unternehmen = [c.strip() for c in st.session_state.Unternehmen_text.splitlines() if c.strip()]
     Kriterien  = st.session_state.Kriterien
 
-    # ── Config summary ──
     col_a, col_b, col_c = st.columns(3)
     col_a.metric("Unternehmen", len(Unternehmen))
     col_b.metric("Kriterien",  len(Kriterien))
     est_mins = max(1, round(len(Unternehmen) * 8 / 60))
-    col_c.metric("Est. runtime", f"~{est_mins} min")
+    col_c.metric("Geschätzte Dauer", f"ca. {est_mins} Min.")
 
     if not api_key:
-        st.warning("Bitte Gemini API Key eingeben.")
+        st.warning("Bitte gib einen Gemini API Key ein.")
         st.stop()
     if not Unternehmen:
         st.warning("Keine Unternehmen definiert.")
@@ -676,29 +757,25 @@ elif page == "Analyse durchführen":
         st.warning("Keine Kriterien definiert.")
         st.stop()
 
-    # ── Prompt preview ──
-    with st.expander("Preview prompt (first company)"):
+    with st.expander("Prompt-Vorschau (erstes Unternehmen)"):
         st.code(build_prompt(Unternehmen[0], Kriterien), language="markdown")
 
     st.markdown("---")
 
-    # ── Run button ──
-    if st.button("Start Benchmark Run", type="primary", use_container_width=True):
+    if st.button("Benchmark-Analyse starten", type="primary", use_container_width=True):
         run_analysis(api_key, Unternehmen, Kriterien)
 
-    # ── Results ──
     if st.session_state.results:
         st.markdown("---")
-        st.markdown("### Results")
+        st.markdown("### Ergebnisse")
         df = results_to_df(st.session_state.results, Kriterien)
         st.dataframe(df, use_container_width=True, height=400)
 
-        # Download buttons
         dl_col1, dl_col2 = st.columns(2)
         with dl_col1:
             csv_bytes = df.to_csv(index=False).encode("utf-8")
-            st.download_button("⬇️ CSV herunterladen", csv_bytes, "benchmark_results.csv", "text/csv")
+            st.download_button("CSV herunterladen", csv_bytes, "benchmark_results.csv", "text/csv", use_container_width=True)
         with dl_col2:
             excel_bytes = to_excel(df)
-            st.download_button("⬇️ Excel herunterladen", excel_bytes, "benchmark_results.xlsx",
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("Excel herunterladen", excel_bytes, "benchmark_results.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
