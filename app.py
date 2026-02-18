@@ -259,11 +259,11 @@ with st.sidebar:
     st.markdown(f"*{page}*")
 
 # ═══════════════════════════════════════════════════════
-# HELPER FUNCTIONS
+# HILFSFUNKTIONEN (RESEARCH & ANALYSE)
 # ═══════════════════════════════════════════════════════
 
 def build_prompt(company_name: str, Kriterien: list) -> str:
-    """Dynamically build the analysis prompt from Kriterien config."""
+    """Erstellt den Analyse-Prompt basierend auf den konfigurierten Kriterien."""
 
     Kriterien_block = ""
     for i, c in enumerate(Kriterien, 1):
@@ -279,7 +279,7 @@ Skalenanker:
         if c.get("examples"):
             Kriterien_block += "\nKalibrierungsbeispiele:\n"
             for ex in c["examples"]:
-                Kriterien_block += f"  • {ex['company']}: Score {ex['score']} — {ex['reason']}\n"
+                Kriterien_block += f"  - {ex['company']}: Score {ex['score']} — {ex['reason']}\n"
         Kriterien_block += "\n---\n"
 
     json_example_items = ""
@@ -288,8 +288,7 @@ Skalenanker:
       "kategorie": "{c['category']}",
       "kriterium": "{c['name']}",
       "score": "1-{c['scale']}",
-      "begruendung": "...",
-      "quellen": ["URL1", "URL2"]
+      "begruendung": "..."
     }},
 """
 
@@ -299,25 +298,18 @@ Du arbeitest faktenbasiert, kritisch, vergleichend und nachvollziehbar.
 </rolle>
 
 <kontext>
-Du bewertest Finanz- und FinTech-Unternehmen anhand öffentlich zugänglicher Informationen
-(z. B. Unternehmenswebsites, Geschäftsberichte, Pressemitteilungen, regulatorische Veröffentlichungen).
-Das aktuelle Jahr ist 2025.
+Du bewertest Finanz- und FinTech-Unternehmen anhand öffentlich zugänglicher Informationen für das Jahr 2025.
 </kontext>
 
 <aufgabe>
-Analysiere und bewerte das folgende Unternehmen anhand der definierten Kriterien.
+Analysiere und bewerte das folgende Unternehmen: {company_name}
 
-Unternehmen: {company_name}
-
-Führe dafür eine gezielte Web-Recherche durch.
-Nutze ausschließlich öffentlich zugängliche, überprüfbare Quellen.
-Wenn Informationen fehlen, veraltet oder nicht eindeutig belegbar sind, weise explizit darauf hin. Keine Spekulation.
+Führe eine gezielte Web-Recherche durch. Nutze ausschließlich überprüfbare Quellen.
+Wichtig: Schreibe die Begründungen in klaren, faktischen Sätzen. Vermeide vage Formulierungen, damit die Quellen eindeutig zugeordnet werden können.
 </aufgabe>
 
 <bewertungssystem>
-Verwende für JEDE Teilkategorie die angegebene Likert-Skala (je Kriterium 3, 4 oder 5 Punkte).
-Bewerte stets relativ zu anderen Finanz- und FinTech-Unternehmen, nicht absolut oder idealtypisch.
-Alle Bewertungen müssen logisch aus den gefundenen Fakten ableitbar sein.
+Nutze die definierte Skala pro Kriterium. Bewerte relativ zum Marktumfeld.
 </bewertungssystem>
 
 <kriterien>
@@ -325,27 +317,22 @@ Alle Bewertungen müssen logisch aus den gefundenen Fakten ableitbar sein.
 </kriterien>
 
 <ausgabeformat>
-Gib die Antwort AUSSCHLIESSLICH als valides JSON zurück – kein Text außerhalb des JSON.
+Gib die Antwort AUSSCHLIESSLICH als valides JSON zurück.
 
 {{
   "unternehmen": "{company_name}",
   "bewertungen": [
 {json_example_items.rstrip(',\n')}
   ],
-  "hinweise_zur_datenlage": "Optionale Hinweise zu Datenlücken oder eingeschränkter Vergleichbarkeit."
+  "hinweise_zur_datenlage": "Hinweise zu Datenlücken oder Vergleichbarkeit."
 }}
 </ausgabeformat>
-
-<finale_anweisung>
-Arbeite strukturiert, konsistent und faktenbasiert.
-Priorisiere Nachvollziehbarkeit, Vergleichbarkeit und Transparenz.
-Keine Inhalte außerhalb des JSON ausgeben.
-</finale_anweisung>
 """
     return prompt
 
 
 def extract_json(text: str):
+    """Extrahiert JSON-Inhalte aus dem KI-Antworttext."""
     try:
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
@@ -355,8 +342,30 @@ def extract_json(text: str):
     return None
 
 
-def parse_response(data: dict, company: str, Kriterien: list) -> dict:
-    """Flatten the JSON response into a row dict."""
+def get_granular_sources(text_to_check: str, metadata) -> list:
+    """
+    Identifiziert spezifische URLs aus den Grounding-Metadaten, 
+    die direkt mit dem übergebenen Textsegment verknüpft sind.
+    """
+    if not metadata or not hasattr(metadata, 'grounding_supports'):
+        return []
+
+    found_urls = []
+    for support in metadata.grounding_supports:
+        support_text = support.segment.text
+        # Prüfung auf Überschneidung zwischen Begründungstext und Quell-Segment
+        if support_text in text_to_check or text_to_check in support_text:
+            for index in support.grounding_chunk_indices:
+                if index < len(metadata.grounding_chunks):
+                    chunk = metadata.grounding_chunks[index]
+                    if chunk.web:
+                        found_urls.append(chunk.web.uri)
+    
+    return sorted(list(set(found_urls)))
+
+
+def parse_response(data: dict, company: str, Kriterien: list, metadata=None) -> dict:
+    """Wandelt die JSON-Antwort und Metadaten in ein flaches Dictionary für den Export um."""
     row = {"Unternehmen": company, "Status": "OK"}
     bewertungen = data.get("bewertungen", [])
 
@@ -366,21 +375,28 @@ def parse_response(data: dict, company: str, Kriterien: list) -> dict:
         lookup[key] = b
 
     for c in Kriterien:
-        col_base = f"{c['category']} › {c['name']}"
+        col_base = f"{c['category']} - {c['name']}"
         b = lookup.get((c["category"], c["name"]), {})
-        row[f"{col_base} | Score"]       = b.get("score", "")
-        row[f"{col_base} | Begründung"]  = b.get("begruendung", "")
-        row[f"{col_base} | Quellen"]     = "; ".join(b.get("quellen", []))
+        
+        begruendung = b.get("begruendung", "")
+        # Granulares Mapping der Quellen pro Kriterium
+        quellen_liste = get_granular_sources(begruendung, metadata)
+        
+        row[f"{col_base} | Score"] = b.get("score", "")
+        row[f"{col_base} | Begründung"] = begruendung
+        row[f"{col_base} | Quellen"] = "\n".join(quellen_liste)
 
     row["Hinweise Datenlage"] = data.get("hinweise_zur_datenlage", "")
     return row
 
 
 def results_to_df(results: list, Kriterien: list) -> pd.DataFrame:
+    """Konvertiert die Ergebnisliste in ein Pandas DataFrame."""
     return pd.DataFrame(results)
 
 
 def to_excel(df: pd.DataFrame) -> bytes:
+    """Erzeugt einen Excel-Datenstrom aus dem DataFrame."""
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Benchmark")
@@ -388,12 +404,12 @@ def to_excel(df: pd.DataFrame) -> bytes:
 
 
 def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
-    """Run the full benchmark analysis with progress tracking."""
+    """Führt die vollständige Benchmark-Analyse mit Fortschrittsanzeige aus."""
     try:
         from google import genai as genai_client
         from google.genai import types
     except ImportError:
-        st.error("google-genai package nicht installiert. Ausführen: pip install google-genai")
+        st.error("Das Paket google-genai ist nicht installiert.")
         return
 
     client = genai_client.Client(api_key=api_key)
@@ -402,59 +418,49 @@ def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
 
     results = []
     progress_bar = st.progress(0)
-    status_text  = st.empty()
-    log_area     = st.empty()
-    log_lines    = []
+    status_text = st.empty()
+    log_area = st.empty()
+    log_lines = []
 
     for idx, company in enumerate(Unternehmen):
-        pct = idx / len(Unternehmen)
-        progress_bar.progress(pct)
-        status_text.markdown(f"**Verarbeite {idx+1}/{len(Unternehmen)}: {company}**")
+        pct = (idx + 1) / len(Unternehmen)
+        status_text.markdown(f"**Verarbeite {idx+1} von {len(Unternehmen)}: {company}**")
 
         try:
-            prompt   = build_prompt(company, Kriterien)
+            prompt = build_prompt(company, Kriterien)
             response = client.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=prompt,
                 config=config,
             )
 
-            sources = []
-            try:
-                metadata = response.candidates[0].grounding_metadata
-                if metadata and metadata.grounding_chunks:
-                    for chunk in metadata.grounding_chunks:
-                        if chunk.web:
-                            sources.append(f"{chunk.web.title}: {chunk.web.uri}")
-            except Exception:
-                pass
-
+            metadata = response.candidates[0].grounding_metadata
             data = extract_json(response.text)
+
             if data and "bewertungen" in data:
-                row = parse_response(data, company, Kriterien)
-                row["_raw_json"]    = response.text[:2000]
-                row["_all_sources"] = "\n".join(set(sources))
+                # Übergabe der Metadaten für das präzise Source-Mapping
+                row = parse_response(data, company, Kriterien, metadata)
                 results.append(row)
-                log_lines.append(f"{company}")
+                log_lines.append(f"Erfolg: {company}")
             else:
-                results.append({"Unternehmen": company, "Status": "Parse-Fehler – kein JSON gefunden"})
-                log_lines.append(f"{company} — JSON-Parse fehlgeschlagen")
+                results.append({"Unternehmen": company, "Status": "Fehler beim Auslesen der Daten"})
+                log_lines.append(f"Fehler: {company} (JSON konnte nicht gelesen werden)")
 
         except Exception as e:
-            results.append({"Unternehmen": company, "Status": f"Fehler: {str(e)}"})
-            log_lines.append(f"{company} — {str(e)}")
+            results.append({"Unternehmen": company, "Status": f"Systemfehler: {str(e)}"})
+            log_lines.append(f"Fehler: {company} ({str(e)})")
 
-        log_area.code("\n".join(log_lines[-15:]))
-        time.sleep(3)
+        log_area.code("\n".join(log_lines[-10:]))
+        progress_bar.progress(pct)
+        time.sleep(2) # Kurze Pause zur Stabilisierung
 
-    progress_bar.progress(1.0)
-    status_text.markdown("**Analyse abgeschlossen!**")
+    status_text.markdown("**Analyse vollständig abgeschlossen**")
     st.session_state.results = results
     st.rerun()
 
 
 def render_navigation_bottom():
-    """Render navigation buttons at the bottom of the page."""
+    """Zeigt Navigations-Buttons am Ende der Seite an."""
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 8, 1])
     
