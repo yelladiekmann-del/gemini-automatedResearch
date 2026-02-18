@@ -495,7 +495,7 @@ if page == "Überblick":
     - Schritt 4: Analyse starten
     """)
 
-    if st.button("Zur Analyse starten", use_container_width=True, type="primary"):
+    if st.button("Starten", use_container_width=True, type="primary"):
         st.session_state.page_index = 1
         st.rerun()
 
