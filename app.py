@@ -43,32 +43,31 @@ st.markdown("""
     color: white !important;
 }
 
-/* Verbesserte Criterion Card */
+/* Neutrale Criterion Card - minimalistisches Design */
 .criterion-card {
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-    border: 1px solid #e0e0e0;
-    border-radius: 12px;
-    padding: 1.4rem;
+    background: #f5f6f8;
+    border: 1px solid #d8dce4;
+    border-radius: 8px;
+    padding: 1.2rem;
     margin-bottom: 1rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     transition: all 0.2s ease;
 }
 
 .criterion-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    border-color: #d0d0d0;
+    border-color: #6a8ba8;
+    box-shadow: 0 2px 6px rgba(106, 139, 168, 0.08);
 }
 
 .criterion-title {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     font-weight: 600;
-    color: #1f2937;
-    margin-bottom: 0.5rem;
+    color: #2d3748;
+    margin-bottom: 0.4rem;
 }
 
 .criterion-description {
-    color: #6b7280;
-    font-size: 0.95rem;
+    color: #5a6470;
+    font-size: 0.92rem;
     margin-bottom: 0.8rem;
     line-height: 1.4;
 }
@@ -78,39 +77,30 @@ st.markdown("""
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
     margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid #e5e7eb;
+    padding-top: 0.8rem;
+    border-top: 1px solid #e2e6ed;
 }
 
 .anchor-box {
-    padding: 0.8rem;
-    border-radius: 8px;
-    font-size: 0.88rem;
+    padding: 0.7rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
     line-height: 1.4;
-}
-
-.anchor-low {
-    background: #fef3c7;
-    color: #92400e;
-    border-left: 3px solid #fbbf24;
-}
-
-.anchor-high {
-    background: #d1fae5;
-    color: #065f46;
-    border-left: 3px solid #10b981;
+    background: #ffffff;
+    border: 1px solid #e2e6ed;
+    color: #4a5568;
 }
 
 .tag {
     display: inline-block;
-    background: #e5e7eb;
-    color: #374151;
-    border-radius: 6px;
-    padding: 0.3rem 0.7rem;
-    font-size: 0.75rem;
+    background: #e8ecf4;
+    color: #4a5568;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.72rem;
     font-weight: 500;
-    margin-right: 0.5rem;
-    margin-bottom: 0.5rem;
+    margin-right: 0.4rem;
+    margin-bottom: 0.4rem;
 }
 
 .step-header {
@@ -126,24 +116,24 @@ st.markdown("""
     margin-bottom: 1.5rem;
 }
 
-/* Navigation Buttons */
-.nav-container {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    padding-bottom: 1rem;
-    border-bottom: 2px solid #e5e7eb;
-}
-
 /* Score Pill */
 .score-pill {
     display: inline-block;
-    background: #3b82f6;
+    background: #6a8ba8;
     color: white;
     border-radius: 999px;
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85rem;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
     font-weight: 600;
+}
+
+/* Edit Form Container */
+.edit-form-container {
+    background: #f9fafb;
+    border: 2px solid #6a8ba8;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem 0;
 }
 
 </style>
@@ -248,7 +238,7 @@ PAGES = [
 ]
 
 # ─────────────────────────────────────────────
-# SIDEBAR – API KEY & STATUS
+# SIDEBAR – API KEY & NAVIGATION
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## Automatisiertes Gemini Research Tool")
@@ -262,15 +252,11 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("**Status**")
-
-    n_Unternehmen = len([c for c in st.session_state.Unternehmen_text.splitlines() if c.strip()])
-    n_Kriterien  = len(st.session_state.Kriterien)
-    n_results   = len(st.session_state.results)
-
-    st.markdown(f"**{n_Unternehmen}** Unternehmen")
-    st.markdown(f"**{n_Kriterien}** Kriterien")
-    st.markdown(f"**{n_results}** Ergebnisse verfügbar")
+    
+    # Schritt-Anzeige in der Sidebar
+    page = PAGES[st.session_state.page_index]
+    st.markdown(f"**Schritt {st.session_state.page_index + 1}/{len(PAGES)}**")
+    st.markdown(f"*{page}*")
 
 # ═══════════════════════════════════════════════════════
 # HELPER FUNCTIONS
@@ -467,34 +453,22 @@ def run_analysis(api_key: str, Unternehmen: list, Kriterien: list):
     st.rerun()
 
 
-def render_navigation():
-    """Render navigation buttons on the page."""
-    col1, col2, col3, col4 = st.columns([1, 1, 10, 1])
+def render_navigation_bottom():
+    """Render navigation buttons at the bottom of the page."""
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 8, 1])
     
     with col1:
         if st.session_state.page_index > 0:
             if st.button("Zurück", use_container_width=True):
                 st.session_state.page_index -= 1
                 st.rerun()
-        else:
-            st.write("")
-    
-    with col2:
+
+    with col3:
         if st.session_state.page_index < len(PAGES) - 1:
             if st.button("Weiter", use_container_width=True):
                 st.session_state.page_index += 1
                 st.rerun()
-        else:
-            st.write("")
-    
-    with col3:
-        page_name = PAGES[st.session_state.page_index]
-        st.markdown(f"**Schritt {st.session_state.page_index + 1}/{len(PAGES)}:** {page_name}")
-    
-    with col4:
-        st.write("")
-
-    st.markdown('<div style="margin-bottom: 1.5rem;"></div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════
 # PAGE 0 – ÜBERBLICK
@@ -529,8 +503,6 @@ if page == "Überblick":
 # PAGE 1 – UNTERNEHMEN
 # ═══════════════════════════════════════════════════════
 elif page == "Unternehmen":
-    render_navigation()
-    
     st.markdown('<div class="step-header">Unternehmen definieren</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">Ein Unternehmensname pro Zeile. Das Tool recherchiert jedes nacheinander.</div>', unsafe_allow_html=True)
 
@@ -558,18 +530,19 @@ elif page == "Unternehmen":
             st.session_state.Unternehmen_text = DEFAULT_Unternehmen
             st.rerun()
 
+    render_navigation_bottom()
+
 # ═══════════════════════════════════════════════════════
 # PAGE 2 – KRITERIEN
 # ═══════════════════════════════════════════════════════
 elif page == "Kriterien":
-    render_navigation()
-    
     st.markdown('<div class="step-header">Bewertungskriterien definieren</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">Definiere, was bewertet wird und wie. Jedes Kriterium verwendet eine Likert-Skala von 1 (niedrig) bis N (hoch).</div>', unsafe_allow_html=True)
 
     to_delete = None
 
     for idx, crit in enumerate(st.session_state.Kriterien):
+        # Zeige das Kriterium Card
         with st.container():
             st.markdown(f"""
             <div class="criterion-card">
@@ -580,11 +553,11 @@ elif page == "Kriterien":
                 <div class="criterion-title">{crit['name']}</div>
                 <div class="criterion-description">{crit['description']}</div>
                 <div class="criterion-anchors">
-                    <div class="anchor-box anchor-low">
+                    <div class="anchor-box">
                         <strong>Wert 1 (niedrig)</strong><br/>
                         {crit['anchor_low']}
                     </div>
-                    <div class="anchor-box anchor-high">
+                    <div class="anchor-box">
                         <strong>Wert {crit['scale']} (hoch)</strong><br/>
                         {crit['anchor_high']}
                     </div>
@@ -605,16 +578,58 @@ elif page == "Kriterien":
                 ex_text = "Beispiel" if n_ex == 1 else "Beispiele"
                 st.markdown(f"<span style='font-size:0.8rem;color:#888'>{n_ex} {ex_text}</span>", unsafe_allow_html=True)
 
+        # Zeige Edit-Form direkt darunter, wenn dieses Kriterium bearbeitet wird
+        if st.session_state.editing_id == crit["id"]:
+            st.markdown('<div class="edit-form-container">', unsafe_allow_html=True)
+            st.subheader("Kriterium bearbeiten")
+
+            with st.form(f"criterion_form_{crit['id']}"):
+                f_category = st.text_input("Kategorie", value=crit.get("category", ""))
+                f_name     = st.text_input("Kriterium-Name", value=crit.get("name", ""))
+                f_desc     = st.text_area("Beschreibung (wird dem Modell angezeigt)",
+                                          value=crit.get("description", ""), height=90)
+                f_scale    = st.selectbox("Skala", [3, 4, 5],
+                                          index=[3,4,5].index(crit.get("scale", 4)),
+                                          key=f"scale_{crit['id']}")
+                f_low      = st.text_area(f"Anker für 1 (niedrigster Wert)",
+                                          value=crit.get("anchor_low", ""), height=70)
+                f_high     = st.text_area(f"Anker für {f_scale} (höchster Wert)",
+                                          value=crit.get("anchor_high", ""), height=70)
+
+                save_col, cancel_col = st.columns([1, 1])
+                with save_col:
+                    submitted = st.form_submit_button("Speichern")
+                with cancel_col:
+                    cancelled = st.form_submit_button("Abbrechen")
+
+            if submitted:
+                new_crit = {
+                    "id": crit["id"],
+                    "category": f_category,
+                    "name": f_name,
+                    "description": f_desc,
+                    "scale": f_scale,
+                    "anchor_low": f_low,
+                    "anchor_high": f_high,
+                    "examples": crit.get("examples", []),
+                }
+                st.session_state.Kriterien[idx] = new_crit
+                st.session_state.editing_id = None
+                st.rerun()
+
+            if cancelled:
+                st.session_state.editing_id = None
+                st.rerun()
+
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("---")
+
     if to_delete:
         st.session_state.Kriterien = [c for c in st.session_state.Kriterien if c["id"] != to_delete]
         st.rerun()
 
-    st.markdown("---")
-
-    editing = st.session_state.editing_id is not None
-    adding  = st.session_state.adding_criterion
-
-    if not editing and not adding:
+    # Buttons für Hinzufügen und Reset (nur wenn nicht editiert wird)
+    if st.session_state.editing_id is None:
         col1, col2 = st.columns([1, 5])
         with col1:
             if st.button("Kriterium hinzufügen", use_container_width=True):
@@ -625,68 +640,55 @@ elif page == "Kriterien":
                 st.session_state.Kriterien = deepcopy(DEFAULT_Kriterien)
                 st.rerun()
 
-    else:
-        existing = {}
-        if editing:
-            for c in st.session_state.Kriterien:
-                if c["id"] == st.session_state.editing_id:
-                    existing = c
-                    break
-            st.subheader("Kriterium bearbeiten")
-        else:
+        # Add New Form (am Ende, wenn nichts editiert wird)
+        if st.session_state.adding_criterion:
+            st.markdown('<div class="edit-form-container">', unsafe_allow_html=True)
             st.subheader("Neues Kriterium")
 
-        with st.form("criterion_form"):
-            f_category = st.text_input("Kategorie",       value=existing.get("category", ""))
-            f_name     = st.text_input("Kriterium-Name", value=existing.get("name", ""))
-            f_desc     = st.text_area("Beschreibung (wird dem Modell angezeigt)",
-                                      value=existing.get("description", ""), height=90)
-            f_scale    = st.selectbox("Skala",  [3, 4, 5],
-                                      index=[3,4,5].index(existing.get("scale", 4)))
-            f_low      = st.text_area(f"Anker für 1 (niedrigster Wert)",
-                                      value=existing.get("anchor_low",  ""), height=70)
-            f_high     = st.text_area(f"Anker für {f_scale} (höchster Wert)",
-                                      value=existing.get("anchor_high", ""), height=70)
+            with st.form("criterion_form_new"):
+                f_category = st.text_input("Kategorie", value="")
+                f_name     = st.text_input("Kriterium-Name", value="")
+                f_desc     = st.text_area("Beschreibung (wird dem Modell angezeigt)",
+                                          value="", height=90)
+                f_scale    = st.selectbox("Skala", [3, 4, 5], index=1)
+                f_low      = st.text_area(f"Anker für 1 (niedrigster Wert)",
+                                          value="", height=70)
+                f_high     = st.text_area(f"Anker für {f_scale} (höchster Wert)",
+                                          value="", height=70)
 
-            save_col, cancel_col = st.columns([1, 1])
-            with save_col:
-                submitted = st.form_submit_button("Speichern")
-            with cancel_col:
-                cancelled = st.form_submit_button("Abbrechen")
+                save_col, cancel_col = st.columns([1, 1])
+                with save_col:
+                    submitted = st.form_submit_button("Speichern")
+                with cancel_col:
+                    cancelled = st.form_submit_button("Abbrechen")
 
-        if submitted:
-            new_crit = {
-                "id": existing.get("id") or str(uuid.uuid4()),
-                "category":    f_category,
-                "name":        f_name,
-                "description": f_desc,
-                "scale":       f_scale,
-                "anchor_low":  f_low,
-                "anchor_high": f_high,
-                "examples":    existing.get("examples", []),
-            }
-            if editing:
-                st.session_state.Kriterien = [
-                    new_crit if c["id"] == existing["id"] else c
-                    for c in st.session_state.Kriterien
-                ]
-            else:
+            if submitted:
+                new_crit = {
+                    "id": str(uuid.uuid4()),
+                    "category": f_category,
+                    "name": f_name,
+                    "description": f_desc,
+                    "scale": f_scale,
+                    "anchor_low": f_low,
+                    "anchor_high": f_high,
+                    "examples": [],
+                }
                 st.session_state.Kriterien.append(new_crit)
-            st.session_state.editing_id      = None
-            st.session_state.adding_criterion = False
-            st.rerun()
+                st.session_state.adding_criterion = False
+                st.rerun()
 
-        if cancelled:
-            st.session_state.editing_id      = None
-            st.session_state.adding_criterion = False
-            st.rerun()
+            if cancelled:
+                st.session_state.adding_criterion = False
+                st.rerun()
+
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    render_navigation_bottom()
 
 # ═══════════════════════════════════════════════════════
 # PAGE 3 – KALIBRIERUNGSBEISPIELE
 # ═══════════════════════════════════════════════════════
 elif page == "Kalibrierungsbeispiele":
-    render_navigation()
-    
     st.markdown('<div class="step-header">Kalibrierungsbeispiele</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">Für jedes Kriterium kannst du bewertete Referenz-Unternehmen angeben. Das Modell nutzt diese als Ankerpunkte.</div>', unsafe_allow_html=True)
 
@@ -702,7 +704,7 @@ elif page == "Kalibrierungsbeispiele":
                 with col_company:
                     st.markdown(f"**{ex['company']}**")
                 with col_reason:
-                    st.markdown(f"<span style='color:#6b7280;font-size:0.88rem'>{ex['reason']}</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='color:#5a6470;font-size:0.88rem'>{ex['reason']}</span>", unsafe_allow_html=True)
                 with col_del:
                     if st.button("Löschen", key=f"rm_ex_{crit['id']}_{ex_idx}", use_container_width=True):
                         to_remove = ex_idx
@@ -729,12 +731,12 @@ elif page == "Kalibrierungsbeispiele":
                         })
                         st.rerun()
 
+    render_navigation_bottom()
+
 # ═══════════════════════════════════════════════════════
 # PAGE 4 – ANALYSE DURCHFÜHREN
 # ═══════════════════════════════════════════════════════
 elif page == "Analyse durchführen":
-    render_navigation()
-    
     st.markdown('<div class="step-header">Analyse durchführen</div>', unsafe_allow_html=True)
     st.markdown('<div class="step-sub">Überprüfe deine Konfiguration und starte die Benchmark-Analyse.</div>', unsafe_allow_html=True)
 
@@ -779,3 +781,5 @@ elif page == "Analyse durchführen":
             excel_bytes = to_excel(df)
             st.download_button("Excel herunterladen", excel_bytes, "benchmark_results.xlsx",
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+    render_navigation_bottom()
