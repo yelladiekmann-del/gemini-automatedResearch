@@ -177,13 +177,13 @@ if "editing_id" not in st.session_state:
 # SIDEBAR – API KEY & NAV
 # ─────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 📊 FinTech Benchmark")
+    st.markdown("##Automatisiertes Gemini Research Tool")
     st.markdown("---")
     api_key = st.text_input(
         "Gemini API Key",
         type="password",
-        placeholder="AIza...",
-        help="Get your key at https://aistudio.google.com/app/apikey",
+        placeholder="Hier den Key eingeben",
+        help="Frag Yella",
     )
     st.markdown("---")
     st.markdown("**Navigation**")
@@ -198,7 +198,7 @@ with st.sidebar:
     n_results   = len(st.session_state.results)
     st.markdown(f"**{n_Unternehmen}** Unternehmen")
     st.markdown(f"**{n_Kriterien}** Kriterien")
-    st.markdown(f"**{n_results}** results ready")
+    st.markdown(f"**{n_results}** Ergebnisse sind ready:)")
 
 
 # ═══════════════════════════════════════════════════════
