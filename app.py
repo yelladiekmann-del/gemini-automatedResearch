@@ -241,6 +241,28 @@ PAGES = [
 # SIDEBAR – KONFIGURATION & STATUS
 # ─────────────────────────────────────────────
 with st.sidebar:
+    # Custom CSS to ensure input text is visible
+    # We set a background color and a high-contrast text color
+    st.markdown(
+        """
+        <style>
+        /* Target the input field itself */
+        .stTextInput input {
+            color: #000000 !important; /* Dark black text for clarity */
+            background-color: #f0f2f6 !important; /* Light grey background */
+            border-radius: 5px;
+        }
+        
+        /* Optional: Change the label color if it's also hard to see */
+        .stTextInput label {
+            color: #1f77b4 !important;
+            font-weight: bold;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     st.markdown("## Automatisiertes Gemini Research Tool")
 
     # API Key input field for users
@@ -255,10 +277,15 @@ with st.sidebar:
     if not api_key:
         api_key = st.secrets.get("GEMINI_API_KEY", "")
     
-    # Schritt-Anzeige in der Sidebar
-    page = PAGES[st.session_state.page_index]
-    st.markdown(f"**Schritt {st.session_state.page_index + 1}/{len(PAGES)}**")
-    st.markdown(f"*{page}*")
+    # Check if PAGES and session_state are initialized to prevent errors
+    if 'page_index' in st.session_state and 'PAGES' in globals():
+        page = PAGES[st.session_state.page_index]
+        st.markdown("---") # Visual separator
+        st.markdown(f"**Schritt {st.session_state.page_index + 1}/{len(PAGES)}**")
+        st.markdown(f"*{page}*")
+    else:
+        # Fallback if the rest of your app logic hasn't loaded yet
+        st.info("Initialisiere Tool...")
 
 # ═══════════════════════════════════════════════════════
 # HILFSFUNKTIONEN (RESEARCH & ANALYSE)
