@@ -232,6 +232,10 @@ if "editing_id" not in st.session_state:
     st.session_state.editing_id = None
 if "criteria_group_names" not in st.session_state:
     st.session_state.criteria_group_names = None
+if "criteria_split_proposal" not in st.session_state:
+    st.session_state.criteria_split_proposal = None
+if "approved_criteria_split" not in st.session_state:
+    st.session_state.approved_criteria_split = None
 
 # Navigation State
 if "page_index" not in st.session_state:
@@ -621,6 +625,122 @@ def create_pca_plot(analysis_result: dict, df: pd.DataFrame, group_names: dict) 
     )
     loadings_df = loadings_df.round(3)
     st.dataframe(loadings_df, use_container_width=True)
+
+
+def propose_criteria_split(api_key: str, Kriterien: list) -> dict | None:
+    """
+    Lässt Gemini eine logische Aufteilung aller Kriterien in 2 Gruppen vorschlagen,
+    inkl. übergeordneter Namen. Strebt eine möglichst ausgeglichene Verteilung an.
+    
+    Returns:
+        dict mit group1 (list), group2 (list), group1_name, group2_name,
+        group1_reason, group2_reason; oder None bei Fehler
+    """
+    criteria_lines = []
+    for c in Kriterien:
+        full_name = f"{c['category']} - {c['name']}"
+        criteria_lines.append(f"- {full_name}: {c.get('description', '')}")
+    
+    prompt = f"""<rolle>
+Du bist ein Experte für Geschäftsanalyse und Strategie. Du strukturierst Bewertungskriterien für Finanz- und FinTech-Unternehmen in sinnvolle übergeordnete Kategorien.
+</rolle>
+
+<aufgabe>
+Teile die folgenden Bewertungskriterien in genau 2 Gruppen ein. Die Aufteilung soll inhaltlich logisch sein: Kriterien, die thematisch zusammengehören, sollen in derselben Gruppe landen. Gib jeder Gruppe einen prägnanten übergeordneten Namen (2–4 Wörter, Deutsch).
+
+**Wichtig:** Die Aufteilung soll möglichst ausgeglichen sein (ähnlich viele Kriterien pro Gruppe). Bei ungerader Anzahl darf eine Gruppe ein Kriterium mehr haben.
+
+**Alle Kriterien:**
+{chr(10).join(criteria_lines)}
+</aufgabe>
+
+<anforderungen>
+- Genau 2 Gruppen; jedes Kriterium genau einer Gruppe zuordnen.
+- Übergeordnete Namen auf Deutsch, 2–4 Wörter (z.B. "Operative Exzellenz", "Marktpositionierung").
+- Kurze Begründung pro Gruppe (1–2 Sätze).
+- Möglichst ausgeglichene Verteilung (z.B. bei 6 Kriterien: 3 und 3).
+</anforderungen>
+
+<ausgabeformat>
+Gib die Antwort AUSSCHLIESSLICH als valides JSON zurück. Verwende die exakten Kriterien-Bezeichnungen wie oben (Format "Kategorie - Name"):
+
+{{
+  "gruppe1_kriterien": ["Kategorie - Name", "..."],
+  "gruppe2_kriterien": ["Kategorie - Name", "..."],
+  "gruppe1_name": "Übergeordneter Name Gruppe 1",
+  "gruppe2_name": "Übergeordneter Name Gruppe 2",
+  "begruendung_gruppe1": "Kurze Begründung",
+  "begruendung_gruppe2": "Kurze Begründung"
+}}
+</ausgabeformat>
+"""
+    
+    try:
+        from google import genai as genai_client
+        from google.genai import types
+        client = genai_client.Client(api_key=api_key)
+        config = types.GenerateContentConfig()
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=config,
+        )
+        data = extract_json(response.text)
+        if not data or "gruppe1_kriterien" not in data or "gruppe2_kriterien" not in data:
+            return None
+        all_names = [f"{c['category']} - {c['name']}" for c in Kriterien]
+        g1 = [x.strip() for x in data.get("gruppe1_kriterien", []) if x.strip() in all_names]
+        g2 = [x.strip() for x in data.get("gruppe2_kriterien", []) if x.strip() in all_names]
+        # Wenn Gemini Kriterien weglässt, rest zu Gruppe 2
+        assigned = set(g1) | set(g2)
+        for name in all_names:
+            if name not in assigned:
+                g2.append(name)
+        return {
+            "group1": g1,
+            "group2": g2,
+            "group1_name": data.get("gruppe1_name", "Gruppe 1").strip(),
+            "group2_name": data.get("gruppe2_name", "Gruppe 2").strip(),
+            "group1_reason": data.get("begruendung_gruppe1", ""),
+            "group2_reason": data.get("begruendung_gruppe2", ""),
+        }
+    except Exception:
+        return None
+
+
+def build_analysis_result_from_approved_split(
+    df: pd.DataFrame, Kriterien: list, approved_split: dict
+) -> dict | None:
+    """
+    Baut aus dem genehmigten Split und den Ergebnissen eine Struktur für PCA/Plots.
+    
+    approved_split: dict mit group1, group2 (Listen der vollen Kriterien-Namen),
+                    group1_name, group2_name
+    """
+    score_cols = [col for col in df.columns if col.endswith(" | Score")]
+    if len(score_cols) < 2:
+        return None
+    score_df = df[score_cols].copy()
+    for col in score_cols:
+        score_df[col] = pd.to_numeric(score_df[col], errors="coerce")
+    score_df = score_df.dropna(axis=0, thresh=len(score_cols) * 0.5)
+    if len(score_df) < 2:
+        return None
+    criterion_names = [col.replace(" | Score", "") for col in score_cols]
+    name_to_idx = {name: i for i, name in enumerate(criterion_names)}
+    group1 = list(approved_split.get("group1", []))
+    group2 = list(approved_split.get("group2", []))
+    group1_indices = [name_to_idx[n] for n in group1 if n in name_to_idx]
+    group2_indices = [name_to_idx[n] for n in group2 if n in name_to_idx]
+    return {
+        "correlation_matrix": score_df.corr(),
+        "group1": group1,
+        "group2": group2,
+        "group1_indices": group1_indices,
+        "group2_indices": group2_indices,
+        "score_df": score_df,
+        "criterion_names": criterion_names,
+    }
 
 
 def generate_group_names(api_key: str, group1_criteria: list, group2_criteria: list, Kriterien: list) -> dict:
@@ -1113,142 +1233,107 @@ elif page == "Analyse durchführen":
             st.download_button("Excel herunterladen", excel_bytes, "benchmark_results.xlsx",
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
-        # Kriterien-Korrelationsanalyse
+        # Übergeordnete Kriterien: Gemini-Vorschlag → Benutzer bearbeitet/ bestätigt → PCA
         st.markdown("---")
-        with st.expander("📊 Kriterien-Korrelationsanalyse", expanded=False):
+        with st.expander("📊 Übergeordnete Kriterien & PCA", expanded=False):
             st.markdown("""
-            **Gruppierung der Kriterien basierend auf Korrelation**
-            
-            Diese Analyse gruppiert die Kriterien in 2 Cluster, basierend darauf, 
-            wie ähnlich die Scoring-Muster zwischen den Unternehmen sind.
-            Stark korrelierte Kriterien werden in derselben Gruppe sein.
-            
-            **Übergeordnete Kriterien:** Mit Hilfe von KI werden für jede Gruppe 
-            aussagekräftige Namen generiert, die das gemeinsame Thema beschreiben.
+            **Schritt 1:** Gemini schlägt eine logische Aufteilung der Kriterien in 2 Gruppen vor (mit übergeordneten Namen, möglichst ausgeglichen).
+            **Schritt 2:** Du kannst die Aufteilung und Namen anpassen und dann bestätigen.
+            **Schritt 3:** Erst nach deiner Bestätigung wird die PCA-Visualisierung basierend auf diesen Gruppen berechnet.
             """)
             
-            analysis_result = analyze_criteria_correlation(df, Kriterien)
-            
-            if analysis_result is None:
-                st.warning("Nicht genügend Daten für Korrelationsanalyse verfügbar. "
-                          "Benötigt mindestens 2 Kriterien und 2 Unternehmen mit gültigen Scores.")
+            all_criterion_names = [f"{c['category']} - {c['name']}" for c in Kriterien]
+            if len(all_criterion_names) < 2:
+                st.warning("Mindestens 2 Kriterien nötig für eine Gruppierung.")
             else:
-                # Generiere oder lade Gruppennamen
-                # Erstelle einen Cache-Key basierend auf den aktuellen Gruppen
-                group_key = f"{sorted(analysis_result['group1'])}|{sorted(analysis_result['group2'])}"
-                
-                # Prüfe ob wir bereits Namen für diese Gruppierung haben
-                if (st.session_state.criteria_group_names is None or 
-                    st.session_state.criteria_group_names.get('group_key') != group_key):
-                    
-                    # Generiere neue Namen mit Gemini
-                    with st.spinner("Generiere aussagekräftige Namen für die Kriterien-Gruppen..."):
-                        group_names = generate_group_names(
-                            api_key, 
-                            analysis_result['group1'], 
-                            analysis_result['group2'],
-                            Kriterien
-                        )
+                # —— Kein genehmigter Split: Vorschlag anfordern oder bearbeiten ——
+                if st.session_state.approved_criteria_split is None:
+                    if st.session_state.criteria_split_proposal is None:
+                        if st.button("✨ Vorschlag von Gemini erstellen", type="primary", use_container_width=False):
+                            with st.spinner("Gemini schlägt Aufteilung vor..."):
+                                proposal = propose_criteria_split(api_key, Kriterien)
+                            if proposal:
+                                st.session_state.criteria_split_proposal = proposal
+                                st.rerun()
+                            else:
+                                st.error("Vorschlag konnte nicht erstellt werden. Bitte API-Key prüfen.")
+                    else:
+                        proposal = st.session_state.criteria_split_proposal
+                        st.markdown("### Vorschlag bearbeiten und bestätigen")
+                        st.markdown("Passe die Gruppen und Namen nach Belieben an, dann bestätige die Aufteilung.")
                         
-                        if group_names:
-                            group_names['group_key'] = group_key
-                            st.session_state.criteria_group_names = group_names
-                        else:
-                            # Fallback falls Gemini-Call fehlschlägt
-                            st.session_state.criteria_group_names = {
-                                'group_key': group_key,
-                                'group1_name': 'Gruppe 1',
-                                'group2_name': 'Gruppe 2',
-                                'group1_reason': '',
-                                'group2_reason': ''
+                        col_edit1, col_edit2 = st.columns(2)
+                        with col_edit1:
+                            name1 = st.text_input("Name Gruppe 1", value=proposal.get("group1_name", "Gruppe 1"), key="edit_group1_name")
+                            current_g1 = st.multiselect(
+                                "Kriterien in Gruppe 1 (Rest gehört zu Gruppe 2)",
+                                options=all_criterion_names,
+                                default=[x for x in proposal["group1"] if x in all_criterion_names],
+                                key="edit_group1_criteria"
+                            )
+                        with col_edit2:
+                            name2 = st.text_input("Name Gruppe 2", value=proposal.get("group2_name", "Gruppe 2"), key="edit_group2_name")
+                            final_g2 = [c for c in all_criterion_names if c not in current_g1]
+                            st.caption(f"Gruppe 2: {len(final_g2)} Kriterien (alle nicht in Gruppe 1)")
+                            for n in final_g2:
+                                st.markdown(f"- {n}")
+                        
+                        final_g1 = list(current_g1)
+                        final_g2 = [c for c in all_criterion_names if c not in final_g1]
+                        
+                        if st.button("✅ Aufteilung bestätigen (PCA wird danach berechnet)", type="primary", use_container_width=False):
+                            st.session_state.approved_criteria_split = {
+                                "group1": final_g1,
+                                "group2": final_g2,
+                                "group1_name": name1 or "Gruppe 1",
+                                "group2_name": name2 or "Gruppe 2",
                             }
+                            st.session_state.criteria_split_proposal = None
+                            st.rerun()
+                        if st.button("🔄 Neuen Vorschlag von Gemini erstellen", use_container_width=False):
+                            st.session_state.criteria_split_proposal = None
+                            st.rerun()
                 
-                group_names = st.session_state.criteria_group_names
-                
-                # Button zum Neugenerieren der Namen
-                if st.button("🔄 Gruppennamen neu generieren", use_container_width=False):
-                    st.session_state.criteria_group_names = None
-                    st.rerun()
-                
-                st.markdown("---")
-                
-                # Zeige die beiden Gruppen mit generierten Namen
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown(f"### 🎯 {group_names.get('group1_name', 'Gruppe 1')}")
-                    if group_names.get('group1_reason'):
-                        st.caption(f"*{group_names['group1_reason']}*")
-                    st.markdown(f"**{len(analysis_result['group1'])} Kriterien:**")
-                    for name in analysis_result['group1']:
-                        st.markdown(f"- {name}")
-                
-                with col2:
-                    st.markdown(f"### 🎯 {group_names.get('group2_name', 'Gruppe 2')}")
-                    if group_names.get('group2_reason'):
-                        st.caption(f"*{group_names['group2_reason']}*")
-                    st.markdown(f"**{len(analysis_result['group2'])} Kriterien:**")
-                    for name in analysis_result['group2']:
-                        st.markdown(f"- {name}")
-                
-                # Zeige Korrelationsmatrix als Heatmap
-                st.markdown("---")
-                st.markdown("### Korrelationsmatrix")
-                st.markdown("*Werte nahe 1 = starke positive Korrelation, nahe -1 = starke negative Korrelation*")
-                
-                # Vereinfachte Darstellung der Korrelationsmatrix
-                corr_df = analysis_result['correlation_matrix']
-                # Runde auf 2 Dezimalstellen für bessere Lesbarkeit
-                corr_display = corr_df.round(2)
-                st.dataframe(corr_display, use_container_width=True)
-                
-                # Statistische Zusammenfassung
-                st.markdown("---")
-                st.markdown("### Statistische Zusammenfassung")
-                
-                summary_col1, summary_col2, summary_col3 = st.columns(3)
-                
-                with summary_col1:
-                    # Durchschnittliche Korrelation innerhalb Gruppe 1
-                    if len(analysis_result['group1_indices']) > 1:
-                        group1_corr = corr_df.iloc[analysis_result['group1_indices'], analysis_result['group1_indices']]
-                        avg_corr_1 = group1_corr.values[np.triu_indices_from(group1_corr.values, k=1)].mean()
-                        st.metric("Ø Korrelation Gruppe 1", f"{avg_corr_1:.2f}")
+                # —— Genehmigter Split: Zusammenfassung + PCA ——
+                if st.session_state.approved_criteria_split is not None:
+                    approved = st.session_state.approved_criteria_split
+                    st.markdown("---")
+                    st.markdown("### Bestätigte Aufteilung")
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.markdown(f"**{approved.get('group1_name', 'Gruppe 1')}** ({len(approved['group1'])} Kriterien)")
+                        for n in approved["group1"]:
+                            st.markdown(f"- {n}")
+                    with col_b:
+                        st.markdown(f"**{approved.get('group2_name', 'Gruppe 2')}** ({len(approved['group2'])} Kriterien)")
+                        for n in approved["group2"]:
+                            st.markdown(f"- {n}")
+                    
+                    if st.button("✏️ Aufteilung wieder bearbeiten", use_container_width=False):
+                        st.session_state.approved_criteria_split = None
+                        st.session_state.criteria_split_proposal = approved
+                        st.rerun()
+                    
+                    analysis_result = build_analysis_result_from_approved_split(df, Kriterien, approved)
+                    if analysis_result is None:
+                        st.warning("Nicht genügend Daten für PCA (mind. 2 Kriterien, ausreichend gültige Scores).")
                     else:
-                        st.metric("Ø Korrelation Gruppe 1", "N/A")
-                
-                with summary_col2:
-                    # Durchschnittliche Korrelation innerhalb Gruppe 2
-                    if len(analysis_result['group2_indices']) > 1:
-                        group2_corr = corr_df.iloc[analysis_result['group2_indices'], analysis_result['group2_indices']]
-                        avg_corr_2 = group2_corr.values[np.triu_indices_from(group2_corr.values, k=1)].mean()
-                        st.metric("Ø Korrelation Gruppe 2", f"{avg_corr_2:.2f}")
-                    else:
-                        st.metric("Ø Korrelation Gruppe 2", "N/A")
-                
-                with summary_col3:
-                    # Durchschnittliche Korrelation zwischen den Gruppen
-                    if len(analysis_result['group1_indices']) > 0 and len(analysis_result['group2_indices']) > 0:
-                        between_corr = corr_df.iloc[analysis_result['group1_indices'], analysis_result['group2_indices']]
-                        avg_between = between_corr.values.mean()
-                        st.metric("Ø Korrelation zwischen Gruppen", f"{avg_between:.2f}")
-                    else:
-                        st.metric("Ø Korrelation zwischen Gruppen", "N/A")
-                
-                # PCA-Visualisierung
-                st.markdown("---")
-                st.markdown("### 📈 PCA-Visualisierung")
-                st.markdown("""
-                **Positionierung der Unternehmen entlang der übergeordneten Kriterien**
-                
-                Die Visualisierung zeigt, wie sich die Unternehmen in Bezug auf die beiden 
-                Kriterien-Gruppen positionieren. Unternehmen mit ähnlichen Scores gruppieren sich zusammen.
-                """)
-                
-                try:
-                    create_pca_plot(analysis_result, df, group_names)
-                except Exception as e:
-                    st.error(f"Fehler bei der PCA-Visualisierung: {str(e)}")
-                    st.info("Stelle sicher, dass genügend Datenpunkte vorhanden sind.")
+                        group_names = {
+                            "group1_name": approved.get("group1_name", "Gruppe 1"),
+                            "group2_name": approved.get("group2_name", "Gruppe 2"),
+                        }
+                        corr_df = analysis_result["correlation_matrix"]
+                        
+                        st.markdown("---")
+                        st.markdown("### Korrelationsmatrix (nur zur Information)")
+                        st.dataframe(corr_df.round(2), use_container_width=True)
+                        
+                        st.markdown("---")
+                        st.markdown("### 📈 PCA-Visualisierung")
+                        st.markdown("Positionierung der Unternehmen entlang der bestätigten übergeordneten Kriterien.")
+                        try:
+                            create_pca_plot(analysis_result, df, group_names)
+                        except Exception as e:
+                            st.error(f"Fehler bei der PCA-Visualisierung: {str(e)}")
 
     render_navigation_bottom()
