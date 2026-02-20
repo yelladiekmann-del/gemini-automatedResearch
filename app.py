@@ -3,6 +3,7 @@ import re
 import time
 import uuid
 import pandas as pd
+import streamlit as st
 from io import BytesIO
 from copy import deepcopy
 
@@ -10,9 +11,9 @@ from copy import deepcopy
 # PAGE CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="Automatisiertes Gemini Research Tool",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="Automatisiertes Gemini Research Tool",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # ─────────────────────────────────────────────
@@ -31,10 +32,12 @@ st.markdown("""
     color: white !important;
 }
 
-/* Optional: Sidebar Inputs ebenfalls weiß */
+/* Sidebar Inputs: Kontrast (sonst weiß auf weiß) */
 [data-testid="stSidebar"] .stTextInput input,
 [data-testid="stSidebar"] .stTextArea textarea {
-    color: white !important;
+    color: #111827 !important;
+    background-color: #f0f2f6 !important;
+    border-radius: 5px;
 }
 
 /* Optional: Radio Buttons & Labels */
@@ -240,28 +243,6 @@ PAGES = [
 # SIDEBAR – KONFIGURATION & STATUS
 # ─────────────────────────────────────────────
 with st.sidebar:
-    # Custom CSS to ensure input text is visible
-    # We set a background color and a high-contrast text color
-    st.markdown(
-        """
-        <style>
-        /* Target the input field itself */
-        .stTextInput input {
-            color: #000000 !important; /* Dark black text for clarity */
-            background-color: #f0f2f6 !important; /* Light grey background */
-            border-radius: 5px;
-        }
-        
-        /* Optional: Change the label color if it's also hard to see */
-        .stTextInput label {
-            color: #1f77b4 !important;
-            font-weight: bold;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
     st.markdown("## Automatisiertes Gemini Research Tool")
 
     # API Key input field for users
@@ -320,6 +301,8 @@ Skalenanker:
     }},
 """
 
+    json_example_items_clean = json_example_items.rstrip(",\n")
+
     prompt = f"""<rolle>
 Du bist ein unabhängiger, erfahrener Finanz- und Strategieberater.
 Du arbeitest faktenbasiert, kritisch, vergleichend und nachvollziehbar.
@@ -350,7 +333,7 @@ Gib die Antwort AUSSCHLIESSLICH als valides JSON zurück.
 {{
   "unternehmen": "{company_name}",
   "bewertungen": [
-{json_example_items.rstrip(',\n')}
+{json_example_items_clean}
   ],
   "hinweise_zur_datenlage": "Hinweise zu Datenlücken oder Vergleichbarkeit."
 }}
