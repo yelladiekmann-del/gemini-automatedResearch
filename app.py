@@ -232,10 +232,8 @@ if "editing_id" not in st.session_state:
     st.session_state.editing_id = None
 if "criteria_group_names" not in st.session_state:
     st.session_state.criteria_group_names = None
-if "criteria_split_proposal" not in st.session_state:
-    st.session_state.criteria_split_proposal = None
-if "approved_criteria_split" not in st.session_state:
-    st.session_state.approved_criteria_split = None
+if "user_axis_config" not in st.session_state:
+    st.session_state.user_axis_config = None
 
 # Navigation State
 if "page_index" not in st.session_state:
@@ -743,6 +741,89 @@ def build_analysis_result_from_approved_split(
     }
 
 
+def build_weighted_axis_scores(
+    df: pd.DataFrame,
+    group1: list,
+    group2: list,
+    group1_weights: dict,
+    group2_weights: dict,
+    axis1_name: str = "Achse 1",
+    axis2_name: str = "Achse 2",
+) -> pd.DataFrame | None:
+    """
+    Berechnet gewichtete Achsen-Scores pro Unternehmen.
+    group1/group2: Listen der Kriterien-Namen (Format "Kategorie - Name").
+    group1_weights/group2_weights: dict criterion_name -> weight (werden pro Achse auf Summe 1 normiert).
+    """
+    score_cols = [col for col in df.columns if col.endswith(" | Score")]
+    if not score_cols:
+        return None
+    score_df = df[score_cols].copy()
+    for col in score_cols:
+        score_df[col] = pd.to_numeric(score_df[col], errors="coerce")
+    score_df = score_df.dropna(axis=0, thresh=max(1, len(score_cols) * 0.5))
+    if len(score_df) < 1:
+        return None
+    col_to_name = {col: col.replace(" | Score", "") for col in score_cols}
+    name_to_col = {v: k for k, v in col_to_name.items()}
+
+    def weighted_score(names: list, weights: dict) -> pd.Series:
+        cols = [name_to_col[n] for n in names if n in name_to_col]
+        if not cols:
+            return pd.Series(0.0, index=score_df.index)
+        w = np.array([weights.get(n, 1.0) for n in names if n in name_to_col], dtype=float)
+        w = np.maximum(w, 0)
+        if w.sum() <= 0:
+            w = np.ones_like(w) / len(w)
+        else:
+            w = w / w.sum()
+        mat = score_df[cols].values
+        return pd.Series(mat @ w, index=score_df.index)
+
+    s1 = weighted_score(group1, group1_weights or {})
+    s2 = weighted_score(group2, group2_weights or {})
+
+    if "Unternehmen" in df.columns:
+        companies = df.loc[score_df.index, "Unternehmen"].values
+    else:
+        companies = [f"Unternehmen {i+1}" for i in range(len(score_df))]
+
+    return pd.DataFrame({
+        "Unternehmen": companies,
+        axis1_name: s1.values,
+        axis2_name: s2.values,
+    })
+
+
+def plot_weighted_axes(plot_df: pd.DataFrame, axis1_name: str, axis2_name: str) -> None:
+    """Zeichnet einen Scatter-Plot: Unternehmen positioniert nach gewichteten Achsen."""
+    fig = px.scatter(
+        plot_df,
+        x=axis1_name,
+        y=axis2_name,
+        text="Unternehmen",
+        title="Unternehmens-Positionierung (gewichtete Achsen)",
+        labels={
+            axis1_name: f"{axis1_name} (gewichteter Score)",
+            axis2_name: f"{axis2_name} (gewichteter Score)",
+        },
+        hover_data=["Unternehmen"],
+    )
+    fig.update_traces(
+        textposition="top center",
+        marker=dict(size=12, opacity=0.7, line=dict(width=2, color="DarkSlateGrey")),
+        textfont=dict(size=10),
+    )
+    fig.update_layout(
+        height=600,
+        showlegend=False,
+        xaxis_title_font=dict(size=14),
+        yaxis_title_font=dict(size=14),
+        title_font=dict(size=16),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def generate_group_names(api_key: str, group1_criteria: list, group2_criteria: list, Kriterien: list) -> dict:
     """
     Generiert mit Gemini aussagekräftige Namen für die beiden Kriterien-Gruppen.
@@ -1233,107 +1314,107 @@ elif page == "Analyse durchführen":
             st.download_button("Excel herunterladen", excel_bytes, "benchmark_results.xlsx",
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
-        # Übergeordnete Kriterien: Gemini-Vorschlag → Benutzer bearbeitet/ bestätigt → PCA
+        # Übergeordnete Achsen: Benutzer gruppiert Kriterien, benennt Achsen, setzt Gewichte → Plot
         st.markdown("---")
-        with st.expander("📊 Übergeordnete Kriterien & PCA", expanded=False):
+        with st.expander("📊 Achsen definieren & Plot", expanded=False):
             st.markdown("""
-            **Schritt 1:** Gemini schlägt eine logische Aufteilung der Kriterien in 2 Gruppen vor (mit übergeordneten Namen, möglichst ausgeglichen).
-            **Schritt 2:** Du kannst die Aufteilung und Namen anpassen und dann bestätigen.
-            **Schritt 3:** Erst nach deiner Bestätigung wird die PCA-Visualisierung basierend auf diesen Gruppen berechnet.
+            Nach der Analyse kannst du selbst die Kriterien zwei Achsen zuordnen, die Achsen benennen und die Gewichtung pro Achse festlegen. Der Plot zeigt die Unternehmen entlang dieser gewichteten Achsen.
             """)
-            
             all_criterion_names = [f"{c['category']} - {c['name']}" for c in Kriterien]
             if len(all_criterion_names) < 2:
-                st.warning("Mindestens 2 Kriterien nötig für eine Gruppierung.")
+                st.warning("Mindestens 2 Kriterien nötig.")
             else:
-                # —— Kein genehmigter Split: Vorschlag anfordern oder bearbeiten ——
-                if st.session_state.approved_criteria_split is None:
-                    if st.session_state.criteria_split_proposal is None:
-                        if st.button("✨ Vorschlag von Gemini erstellen", type="primary", use_container_width=False):
-                            with st.spinner("Gemini schlägt Aufteilung vor..."):
-                                proposal = propose_criteria_split(api_key, Kriterien)
-                            if proposal:
-                                st.session_state.criteria_split_proposal = proposal
-                                st.rerun()
-                            else:
-                                st.error("Vorschlag konnte nicht erstellt werden. Bitte API-Key prüfen.")
-                    else:
-                        proposal = st.session_state.criteria_split_proposal
-                        st.markdown("### Vorschlag bearbeiten und bestätigen")
-                        st.markdown("Passe die Gruppen und Namen nach Belieben an, dann bestätige die Aufteilung.")
-                        
-                        col_edit1, col_edit2 = st.columns(2)
-                        with col_edit1:
-                            name1 = st.text_input("Name Gruppe 1", value=proposal.get("group1_name", "Gruppe 1"), key="edit_group1_name")
-                            current_g1 = st.multiselect(
-                                "Kriterien in Gruppe 1 (Rest gehört zu Gruppe 2)",
-                                options=all_criterion_names,
-                                default=[x for x in proposal["group1"] if x in all_criterion_names],
-                                key="edit_group1_criteria"
-                            )
-                        with col_edit2:
-                            name2 = st.text_input("Name Gruppe 2", value=proposal.get("group2_name", "Gruppe 2"), key="edit_group2_name")
-                            final_g2 = [c for c in all_criterion_names if c not in current_g1]
-                            st.caption(f"Gruppe 2: {len(final_g2)} Kriterien (alle nicht in Gruppe 1)")
-                            for n in final_g2:
-                                st.markdown(f"- {n}")
-                        
-                        final_g1 = list(current_g1)
-                        final_g2 = [c for c in all_criterion_names if c not in final_g1]
-                        
-                        if st.button("✅ Aufteilung bestätigen (PCA wird danach berechnet)", type="primary", use_container_width=False):
-                            st.session_state.approved_criteria_split = {
-                                "group1": final_g1,
-                                "group2": final_g2,
-                                "group1_name": name1 or "Gruppe 1",
-                                "group2_name": name2 or "Gruppe 2",
-                            }
-                            st.session_state.criteria_split_proposal = None
-                            st.rerun()
-                        if st.button("🔄 Neuen Vorschlag von Gemini erstellen", use_container_width=False):
-                            st.session_state.criteria_split_proposal = None
-                            st.rerun()
-                
-                # —— Genehmigter Split: Zusammenfassung + PCA ——
-                if st.session_state.approved_criteria_split is not None:
-                    approved = st.session_state.approved_criteria_split
-                    st.markdown("---")
-                    st.markdown("### Bestätigte Aufteilung")
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.markdown(f"**{approved.get('group1_name', 'Gruppe 1')}** ({len(approved['group1'])} Kriterien)")
-                        for n in approved["group1"]:
-                            st.markdown(f"- {n}")
-                    with col_b:
-                        st.markdown(f"**{approved.get('group2_name', 'Gruppe 2')}** ({len(approved['group2'])} Kriterien)")
-                        for n in approved["group2"]:
-                            st.markdown(f"- {n}")
-                    
-                    if st.button("✏️ Aufteilung wieder bearbeiten", use_container_width=False):
-                        st.session_state.approved_criteria_split = None
-                        st.session_state.criteria_split_proposal = approved
-                        st.rerun()
-                    
-                    analysis_result = build_analysis_result_from_approved_split(df, Kriterien, approved)
-                    if analysis_result is None:
-                        st.warning("Nicht genügend Daten für PCA (mind. 2 Kriterien, ausreichend gültige Scores).")
-                    else:
-                        group_names = {
-                            "group1_name": approved.get("group1_name", "Gruppe 1"),
-                            "group2_name": approved.get("group2_name", "Gruppe 2"),
-                        }
-                        corr_df = analysis_result["correlation_matrix"]
-                        
+                # Default-Konfiguration
+                n = len(all_criterion_names)
+                default_g1 = all_criterion_names[: (n + 1) // 2]
+                default_g2 = [c for c in all_criterion_names if c not in default_g1]
+                cfg = st.session_state.user_axis_config
+                if cfg is None:
+                    cfg = {
+                        "group1": default_g1,
+                        "group2": default_g2,
+                        "group1_name": "Achse 1 (X)",
+                        "group2_name": "Achse 2 (Y)",
+                        "group1_weights": {c: 1.0 for c in default_g1},
+                        "group2_weights": {c: 1.0 for c in default_g2},
+                    }
+
+                st.markdown("### Achse 1 (X-Achse)")
+                name1 = st.text_input("Name Achse 1 (X)", value=cfg.get("group1_name", "Achse 1 (X)"), key="axis1_name")
+                group1_selected = st.multiselect(
+                    "Kriterien für Achse 1 (Rest gehört zu Achse 2)",
+                    options=all_criterion_names,
+                    default=[x for x in cfg.get("group1", default_g1) if x in all_criterion_names],
+                    key="axis1_criteria",
+                )
+                group2_selected = [c for c in all_criterion_names if c not in group1_selected]
+
+                st.markdown("**Gewichtung Achse 1** (Anteile pro Kriterium; werden auf Summe 1 normiert)")
+                w1 = {}
+                for c in group1_selected:
+                    w1[c] = st.number_input(
+                        f"Gewicht: {c}",
+                        min_value=0.0,
+                        value=float(cfg.get("group1_weights", {}).get(c, 1.0)),
+                        step=0.1,
+                        key=f"w1_{c}",
+                    )
+                if not group1_selected:
+                    w1 = {}
+
+                st.markdown("---")
+                st.markdown("### Achse 2 (Y-Achse)")
+                name2 = st.text_input("Name Achse 2 (Y)", value=cfg.get("group2_name", "Achse 2 (Y)"), key="axis2_name")
+                st.caption(f"Kriterien für Achse 2: {len(group2_selected)} (alle nicht in Achse 1)")
+                for c in group2_selected:
+                    st.markdown(f"- {c}")
+
+                st.markdown("**Gewichtung Achse 2**")
+                w2 = {}
+                for c in group2_selected:
+                    w2[c] = st.number_input(
+                        f"Gewicht: {c}",
+                        min_value=0.0,
+                        value=float(cfg.get("group2_weights", {}).get(c, 1.0)),
+                        step=0.1,
+                        key=f"w2_{c}",
+                    )
+                if not group2_selected:
+                    w2 = {}
+
+                if st.button("Plot anzeigen", type="primary", use_container_width=False):
+                    st.session_state.user_axis_config = {
+                        "group1": list(group1_selected),
+                        "group2": list(group2_selected),
+                        "group1_name": name1 or "Achse 1 (X)",
+                        "group2_name": name2 or "Achse 2 (Y)",
+                        "group1_weights": w1,
+                        "group2_weights": w2,
+                    }
+                    st.rerun()
+
+                # Plot nur wenn beide Achsen mindestens ein Kriterium haben
+                if group1_selected and group2_selected:
+                    plot_df = build_weighted_axis_scores(
+                        df,
+                        group1_selected,
+                        group2_selected,
+                        w1,
+                        w2,
+                        axis1_name=name1 or "Achse 1 (X)",
+                        axis2_name=name2 or "Achse 2 (Y)",
+                    )
+                    if plot_df is not None and len(plot_df) > 0:
                         st.markdown("---")
-                        st.markdown("### Korrelationsmatrix (nur zur Information)")
-                        st.dataframe(corr_df.round(2), use_container_width=True)
-                        
-                        st.markdown("---")
-                        st.markdown("### 📈 PCA-Visualisierung")
-                        st.markdown("Positionierung der Unternehmen entlang der bestätigten übergeordneten Kriterien.")
-                        try:
-                            create_pca_plot(analysis_result, df, group_names)
-                        except Exception as e:
-                            st.error(f"Fehler bei der PCA-Visualisierung: {str(e)}")
+                        st.markdown("### 📈 Positionierungsplot")
+                        plot_weighted_axes(
+                            plot_df,
+                            name1 or "Achse 1 (X)",
+                            name2 or "Achse 2 (Y)",
+                        )
+                    else:
+                        st.info("Nicht genug gültige Score-Daten für den Plot.")
+                else:
+                    st.caption("Wähle für beide Achsen mindestens ein Kriterium und klicke auf „Plot anzeigen“.")
 
     render_navigation_bottom()
